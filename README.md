@@ -36,10 +36,11 @@ your own machine** (the terminal CLI, the Claude Code desktop app, or the VS Cod
 / JetBrains extensions).
 
 It will **not** run in the consumer **Claude Desktop app** (the claude.ai-login
-app): that app's code sandbox is Python/Bash-only with no R, no Quarto, and no
-access to your local files — so the quantitative checks (GRIM, `recalc`,
-`quarto render`) cannot execute there even if the skill text were loaded. Use
-Claude Code, not the consumer app, for this skill.
+app) or in **Claude Cowork**: those run code in a Python-focused sandbox with no
+R, no Quarto, and no access to your local files or local packages — so the
+quantitative checks (GRIM, `recalc`, `quarto render`) cannot execute there even
+if the skill text loads. You can *add* and *invoke* the skill in those surfaces,
+but the analysis will not run. Use Claude Code on your own machine for this skill.
 
 ## Install
 
@@ -84,8 +85,8 @@ repo; no code runs until you invoke the skill (see [Security](#scope--security))
 
 ## Using the skill in Claude
 
-Once installed it is **auto-discovered** at session start — no enable step. Two
-ways to use it:
+Once installed the skill is **auto-discovered** at session start — no enable
+step. In every surface there are two ways to use it:
 
 - **Invoke directly** from the `/` menu — type `/` and pick
   `trustworthiness-assessment` (if installed as a plugin it may be namespaced,
@@ -100,13 +101,41 @@ ways to use it:
 Give Claude the article (PDF/text) and, for a trial, the registration record; it
 then works the Step 0–5 workflow and produces the classified verdict.
 
-## R dependencies
+### Claude Code desktop app / terminal / IDE (runs fully)
 
-`scrutiny`, `statcheck`, `metafor`, `tidyverse`, `kableExtra` (all CRAN) and
-[`recalc`](https://github.com/ianhussey/recalc) — Ian Hussey's package:
+This is the skill's home — local R, Quarto, your files and `recalc` are all
+available.
+
+1. Install via route **A** (`~/.claude/skills/trustworthiness-assessment`).
+2. **If `~/.claude/skills/` did not exist before, restart the app once** so it
+   begins watching the directory; afterwards, edits are picked up live.
+3. Invoke from the `/` menu or in natural language (above).
+4. *Troubleshooting:* if the skill does not appear after a restart, restart again
+   and run `/help` to confirm it loaded — custom skills in `~/.claude/skills/` are
+   occasionally slow to be discovered.
+
+### Claude Cowork (can invoke, but the analysis will not run)
+
+Cowork uses a plugin UI rather than `/plugin` commands, and runs in a
+Python-focused sandbox without R/Quarto or access to your local files — so it can
+load the *method text* but cannot execute the R checks.
+
+1. Add the marketplace: **Customize → Plugins → "+" → Add marketplace**, pointing
+   at `ianhussey/trustworthiness-assessment-skill` (org admins can instead
+   GitHub-sync the repo into a managed marketplace), then install the plugin.
+2. Invoke via `/` in the sidebar or in natural language.
+3. **Expect the quantitative steps to fail** (no R/Quarto/local files). For real
+   assessments use Claude Code on your machine; treat Cowork and the consumer
+   Claude Desktop app as non-runners for this skill.
+
+## Dependencies (one-time local setup)
+
+Install **R** and **Quarto** on your machine, then the R packages — `scrutiny`,
+`statcheck`, `metafor`, `tidyverse`, `kableExtra` (all CRAN) and
+[`recalc`](https://github.com/ianhussey/recalc) (Ian Hussey's package):
 
 ```r
-# install.packages("remotes")
+install.packages(c("tidyverse", "metafor", "scrutiny", "statcheck", "kableExtra", "remotes"))
 remotes::install_github("ianhussey/recalc")
 ```
 
