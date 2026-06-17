@@ -27,58 +27,75 @@ trustworthiness-assessment-skill/
 references, which load on demand. The method itself lives in
 `references/forensic-method.md`.
 
+## Where this skill runs (read first)
+
+This skill's engine is **R + Quarto + your local files** (PDFs) + the local
+[`recalc`](https://github.com/ianhussey/recalc) package. So it must run on a
+surface that has a local toolchain and local file access — i.e. **Claude Code on
+your own machine** (the terminal CLI, the Claude Code desktop app, or the VS Code
+/ JetBrains extensions).
+
+It will **not** run in the consumer **Claude Desktop app** (the claude.ai-login
+app): that app's code sandbox is Python/Bash-only with no R, no Quarto, and no
+access to your local files — so the quantitative checks (GRIM, `recalc`,
+`quarto render`) cannot execute there even if the skill text were loaded. Use
+Claude Code, not the consumer app, for this skill.
+
 ## Install
 
-Two pathways. **A** is the easiest for others — installs from GitHub with
-auto-updates. **B** needs no plugin system and is handy for hacking on the skill.
+### A. Local skills folder (works everywhere Claude Code runs — recommended)
 
-### A. Plugin marketplace (recommended, installs from GitHub)
+A skill is just a folder with `SKILL.md` at its root. Drop this repo into a Claude
+Code skills directory and it is auto-discovered:
 
-This repo ships a marketplace manifest (`.claude-plugin/marketplace.json`) and a
-plugin manifest (`.claude-plugin/plugin.json`), so it is installable as a plugin.
-Inside any Claude Code session, run:
+```sh
+# personal (all projects):
+git clone https://github.com/ianhussey/trustworthiness-assessment-skill \
+  ~/.claude/skills/trustworthiness-assessment
+# or symlink an existing local clone instead of re-cloning:
+ln -sfn /path/to/trustworthiness-assessment-skill \
+  ~/.claude/skills/trustworthiness-assessment
+# or per project:
+git clone https://github.com/ianhussey/trustworthiness-assessment-skill \
+  /path/to/project/.claude/skills/trustworthiness-assessment
+```
+
+Update with `git -C <that dir> pull`. The folder name need not match the `name:`
+in `SKILL.md`, but a clean name is tidier. **Note:** if `~/.claude/skills/` did
+not exist when your session started, **restart Claude Code** so it begins
+watching the new directory (an existing skills dir picks up additions live).
+
+### B. Plugin marketplace — **terminal CLI / IDE only**
+
+The `/plugin` marketplace flow is supported **only in the Claude Code terminal
+CLI and the IDE extensions** — it is *not* available in the Claude Code desktop
+app or the consumer Claude Desktop app. Where it is available, this repo ships the
+manifests (`.claude-plugin/marketplace.json` + `plugin.json`) so you can run:
 
 ```text
 /plugin marketplace add ianhussey/trustworthiness-assessment-skill
 /plugin install trustworthiness-assessment@ianhussey-skills
 ```
 
-The first command registers this repo as a marketplace named `ianhussey-skills`;
-the second installs the `trustworthiness-assessment` plugin from it. Update later
-with `/plugin marketplace update ianhussey-skills`. Installing only *fetches* the
-repo — no code runs until you invoke the skill (see [Security](#scope--security)).
-
-### B. Manual clone (no plugin system)
-
-A skill is just a folder with `SKILL.md` at its root, so you can drop this repo
-straight into a skills directory:
-
-```sh
-git clone https://github.com/ianhussey/trustworthiness-assessment-skill \
-  ~/.claude/skills/trustworthiness-assessment            # personal, all projects
-# or, per project:
-git clone https://github.com/ianhussey/trustworthiness-assessment-skill \
-  /path/to/project/.claude/skills/trustworthiness-assessment
-```
-
-Update with `git -C <that dir> pull`. (The folder name need not match the
-`name:` in `SKILL.md`, but a clean name is tidier.)
+Update later with `/plugin marketplace update ianhussey-skills`. If `/plugin`
+reports it "isn't available in this environment", use route **A** instead — it
+works on every Claude Code surface. Installing by either route only *fetches* the
+repo; no code runs until you invoke the skill (see [Security](#scope--security)).
 
 ## Using the skill in Claude
 
-Once installed it is **auto-discovered** on the next session start — no enable
-step — across the Claude Code CLI, desktop app, and project sessions. Two ways to
-use it:
+Once installed it is **auto-discovered** at session start — no enable step. Two
+ways to use it:
 
 - **Invoke directly** from the `/` menu — type `/` and pick
-  `trustworthiness-assessment` (plugin-installed skills are namespaced, so it may
-  appear as `trustworthiness-assessment:trustworthiness-assessment`; run `/help`
-  after install to see the exact name). Then point it at the paper, e.g.
-  *"assess the PDF in `pdfs/`, the registration is the CSV beside it."*
-- **Let Claude trigger it** by describing the task in plain language — e.g.
-  *"do a trustworthiness assessment of this trial"*, *"can these reported numbers
-  be trusted?"*, *"GRIM-check this baseline table"*, *"recalculate the baseline
-  p-values"*. The `description` in `SKILL.md` is written to fire on these.
+  `trustworthiness-assessment` (if installed as a plugin it may be namespaced,
+  e.g. `trustworthiness-assessment:trustworthiness-assessment`; run `/help` to see
+  the exact name). Then point it at the paper, e.g. *"assess the PDF in `pdfs/`;
+  the registration is the CSV beside it."*
+- **Let Claude trigger it** by describing the task — e.g. *"do a trustworthiness
+  assessment of this trial"*, *"can these reported numbers be trusted?"*,
+  *"GRIM-check this baseline table"*, *"recalculate the baseline p-values"*. The
+  `description` in `SKILL.md` is written to fire on these.
 
 Give Claude the article (PDF/text) and, for a trial, the registration record; it
 then works the Step 0–5 workflow and produces the classified verdict.
@@ -108,10 +125,15 @@ scrutiny ≥0.6 `digits_x` change).
 A complete worked example (Pu et al. 2026, *BMC Psychiatry*) lives in the
 sibling repo `trustworthinesss-assessment-pu-et-al-2026`.
 
-## Scope & caution
+## Scope & security
 
-This skill produces a *starting point*, not a verdict to act on unchecked. Its
-findings describe what does and does not cohere in the reported numbers; they do
-not impute intent. Re-verify the arithmetic against the article and have a
-statistician review impossibility claims before treating any finding as
+**Security.** Installing this skill by either route only *fetches* files — no
+code runs at install time. `scripts/helpers.R` executes only when you invoke the
+skill and Claude runs the analysis, the same trust boundary as any code you clone
+and run. Review before use.
+
+**Scope.** This skill produces a *starting point*, not a verdict to act on
+unchecked. Its findings describe what does and does not cohere in the reported
+numbers; they do not impute intent. Re-verify the arithmetic against the article
+and have a statistician review impossibility claims before treating any finding as
 established or contacting a journal or author.
