@@ -1,0 +1,14 @@
+# Rendered Quarto/R Markdown output
+*.html
+*_files/
+/.quarto/
+*_cache/
+
+# R session
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# OS
+.DS_Store

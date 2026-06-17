@@ -1,0 +1,211 @@
+---
+title: "Trustworthiness assessment — <FIRST AUTHOR> (<YEAR>)"
+subtitle: "<full citation + DOI>"
+author: "Assessment prepared by <you>"
+date: today
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    toc: true
+    toc-float: true
+    theme: flatly
+    highlight-style: haddock
+    embed-resources: true
+editor_options:
+  chunk_output_type: console
+---
+
+<!--
+============================================================================
+HOW TO USE — this is a SCAFFOLD, not a finished analysis.
+  1. Copy this file into the paper's repo as
+     code/<author>_<year>_trustworthiness_assessment.qmd, and copy the skill's
+     scripts/helpers.R alongside it (this template does source("helpers.R")).
+  2. Read references/forensic-method.md FIRST — method + stance. Re-read the
+     stance before judging anything (burden on authors; no intent; think
+     stupider; NO FALSE POSITIVES).
+  3. Hand-key every reported statistic into the data objects below. Mark each
+     scale integer vs non-integer (GRIM only applies to integer totals).
+  4. Work the steps IN ORDER; delete steps that don't apply but say so. The
+     deliverable is the written verdict at the foot, not the tables.
+  R API notes (scrutiny digits_x gotcha, recalc, escalc): references/r-cookbook.md
+============================================================================
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+options(scipen = 999)
+```
+
+```{r libraries}
+library(tidyverse)
+library(metafor)     # escalc(): SMD / effect sizes you derive
+library(scrutiny)    # GRIM / GRIMMER
+library(statcheck)   # recompute p from reported t/F/r/chi2 text
+library(recalc)      # baseline p recalculation (install from ~/git/recalc)
+library(knitr)
+library(kableExtra)
+
+source("helpers.R")  # grim_consistent, grim_n_profile, recalc_baseline_t,
+                     # implied_prepost_r, eta_from_F, ...  (copy alongside this file)
+```
+
+# Step 0 — Load-bearing claim
+
+<!-- ONE sentence: the result the contribution rests on. Is it the pre-registered
+PRIMARY outcome, or a secondary/post-hoc result promoted to the headline? -->
+
+> *Load-bearing claim goes here.*
+
+# Step 0.5 — Public record
+
+<!-- Retraction / expression of concern on THIS paper; the TEAM's track record;
+TRIAL REGISTRATION compared field-by-field to the paper. Tag [GOVERNANCE]. -->
+
+```{r public-record}
+# registration_check <- tribble(
+#   ~field, ~registry, ~paper,
+#   "Allocation", "...", "...",
+#   "Masking",    "...", "...",
+#   "Enrollment", "...", "...",
+# )
+# registration_check |> kable() |> kable_classic(full_width = FALSE)
+```
+
+# Extract data
+
+<!-- Hand-key reported stats. Keep group/time/n explicit. `integer` flags whether
+the score is an integer total (GRIM-eligible). Zung SDS/SAS index = raw x 1.25
+are NOT integer-grained. -->
+
+```{r extract-data}
+# dat <- tribble(
+#   ~variable, ~integer, ~condition, ~time, ~n, ~mean, ~sd,
+#   ...
+# )
+# anova_tab <- tribble(~variable, ~F, ~eta_reported, ...)   # if RM-ANOVA reported
+```
+
+# Step 1 — Numerical sanity check
+
+## F ↔ partial η² (and the N it implies)
+
+```{r eta-F}
+# anova_tab |>
+#   mutate(eta_calc = round(eta_from_F(F, df_error = <df>), 3),
+#          diff = eta_calc - eta_reported) |>
+#   kable() |> kable_classic(full_width = FALSE)
+```
+
+## Correlations r → t → p
+
+```{r corr}
+# tibble(r = c(...), n = <n>) |>
+#   mutate(t = r*sqrt((n-2)/(1-r^2)), p = round(2*pt(-abs(t), n-2), 4)) |>
+#   kable() |> kable_classic(full_width = FALSE)
+```
+
+## Participant-flow check
+
+<!-- Do all the n's add up across CONSORT diagram, text, and tables? Does the
+test df imply a single N? Hold this against Step 2 (GRIM alternative-n). -->
+
+## Baseline p-value recalculation (`recalc`)
+
+<!-- Each baseline row reports m/sd/n (or counts) AND a p → recompute each p.
+A reported p OUTSIDE its recomputed hull = [IMPOSSIBLE]. If all reproduce, SAY SO
+(clean numerical-sanity result). The distribution of trusted p's is a Carlisle
+check in Step 3 — weak with few variables. -->
+
+```{r recalc-baseline}
+# baseline_cont <- tribble(
+#   ~variable, ~m1, ~sd1, ~m2, ~sd2, ~p,
+#   "HAMD", 24.71, 4.137, 24.81, 3.774, .921,
+#   ...
+# )
+# recalc_baseline_t(baseline_cont, n1 = <n1>, n2 = <n2>) |>
+#   kable(caption = "Reported vs recomputed baseline p (multiverse hull).") |>
+#   kable_classic(full_width = FALSE)
+# # categorical row:
+# recalc_baseline_chisq(matrix(c(a,b,c,d), nrow = 2, byrow = TRUE), p = .082)
+```
+
+# Step 2 — Possibility: GRIM / GRIMMER
+
+<!-- KEY PATTERN: run GRIM SEPARATELY by group x timepoint. Asymmetry (one block
+consistent, a sibling block not, at the same reported n) is the signal. Then
+search alternative n on the failing block. Tag failures [IMPOSSIBLE] with the
+arithmetic; distinguish rounding artifacts from true contradictions. Also: bounds
+(Popoviciu SD<=range/2, Bhatia-Davis, |r|<=1, estimate inside its CI, PSD
+correlation matrix) and coherence (part-whole; bootstrap-CI-vs-p). -->
+
+```{r grim-block}
+# grim_res <- dat |> filter(integer) |>
+#   rowwise() |> mutate(GRIM = grim_consistent(mean, n)) |> ungroup()
+# grim_res |> group_by(condition, time) |>
+#   summarise(pass = sum(GRIM), total = n(), .groups = "drop") |>
+#   kable() |> kable_classic(full_width = FALSE)
+```
+
+```{r grim-altn}
+# failing <- dat |> filter(integer, condition == "<arm>", time == "<time>")
+# prof <- grim_n_profile(failing$mean, n_range = 15:40)
+# ggplot(prof, aes(n, consistent)) + geom_col() + theme_minimal()
+# map_dfr(failing$mean, implied_sum, n = <peak_n>)   # residual ~0 confirms
+```
+
+```{r grimmer}
+# scrutiny::grimmer_map(dat |> filter(integer) |> transmute(x = mean, sd, n),
+#                       digits_x = 2, digits_sd = 3) |>
+#   select(x, sd, n, consistency)   # more assumption-laden; report cautiously
+```
+
+# Step 3 — Plausibility
+
+<!-- Derive omitted effect sizes; test against the design ceiling and the field.
+Watch the SE-vs-SD swap. For 2x2 RM-ANOVA also interrogate the interaction F via
+the implied change-SD / pre-post r. Carlisle-style baseline distribution (weak
+with few vars). Tag [IMPLAUSIBLE]. -->
+
+```{r effect-sizes}
+# escalc(measure = "SMD", m1i=, sd1i=, n1i=, m2i=, sd2i=, n2i=) |> summary()
+```
+
+```{r implied-r}
+# implied_prepost_r(F_int = <interaction F>,
+#   m1b, s1b, m1p, s1p, n1, m2b, s2b, m2p, s2p, n2) |>
+#   kable(caption = "Implied change-score SD & pre-post r from the interaction F.") |>
+#   kable_classic(full_width = FALSE)
+```
+
+# Step 4 — Misalignment
+
+<!-- measure<->construct; test<->inference (causal language from observational
+data; efficacy without a controlled post comparison; change-change correlation as
+mechanism; ANCOVA on non-equivalent groups; cluster-then-test; Table-2 fallacy);
+claim<->evidence (abstract vs tables; general claim on a narrow effect; estimand
+never defined). Tag [MISALIGNMENT]. -->
+
+> *Misalignment findings (prose), each tagged and argued.*
+
+# Step 5 — Conduct, governance, transparency
+
+<!-- ethics/registration timing & consistency (Step 0.5); feasibility; data
+availability; duplicate text/figures; consistency across the team's companion
+papers. Tag [GOVERNANCE]. -->
+
+> *Governance findings (prose), each tagged.*
+
+# Output — verdict
+
+<!--
+1. CLASSIFICATION (one): trustworthy as reported / concerns pending clarification
+   (specify what resolves them) / not trustworthy as reported.
+2. BOTTOM LINE (1-2 sentences).
+3. NUMERICAL SANITY CHECK (what held).
+4. FINDINGS ORDERED BY SEVERITY, each tagged, arithmetic shown.
+5. WHAT I COULD NOT CHECK.
+Close with the reader caution: a starting point, not a verdict to act on
+unchecked; re-verify arithmetic; describe issues, do not accuse.
+-->
