@@ -47,8 +47,9 @@ library(recalc)      # baseline p recalculation (install from ~/git/recalc)
 library(knitr)
 library(kableExtra)
 
-source("helpers.R")  # grim_consistent, grim_n_profile, recalc_baseline_t,
-                     # implied_prepost_r, eta_from_F, ...  (copy alongside this file)
+source("helpers.R")  # skill glue: grim_consistent, grim_n_profile, implied_sum,
+                     # recalc_baseline_t/_chisq, prepost_r_plausibility, p_decimals
+                     # (copy alongside this file). Stats engine = recalc::* .
 ```
 
 # Step 0 — Load-bearing claim
@@ -92,10 +93,9 @@ are NOT integer-grained. -->
 ## F ↔ partial η² (and the N it implies)
 
 ```{r eta-F}
-# anova_tab |>
-#   mutate(eta_calc = round(eta_from_F(F, df_error = <df>), 3),
-#          diff = eta_calc - eta_reported) |>
-#   kable() |> kable_classic(full_width = FALSE)
+# recalc::recalc_partial_eta_from_f(f = <F>, df_effect = 1, df_error = <df>,
+#   f_digits = 3, eta = <reported eta^2>, eta_digits = 3)   # $consistent
+# (df_error = N - #groups also cross-checks the N every test assumes.)
 ```
 
 ## Correlations r → t → p
@@ -173,18 +173,22 @@ Tag [IMPLAUSIBLE] / [IMPOSSIBLE]. -->
 ```
 
 ```{r implied-r}
-# Change-score coherence -> implied within-person pre-post r + feasibility flag.
+# Change-score coherence -> implied within-person pre-post r (recalc >= 0.6).
+# recalc returns the recalculated [lower, upper] interval (rounding-propagated).
 # (A) when a change SD is reported (or an independent t was run on change scores):
-# prepost_r_from_change_sd(sd_pre = , sd_post = , sd_change = ) |>
-#   kable(caption = "Implied pre-post r from reported SDs.") |>
-#   kable_classic(full_width = FALSE)
+# rc <- recalc::recalc_prepost_r(sd_pre = , sd_post = , sd_change = ,
+#         sd_pre_digits = 2, sd_post_digits = 2, sd_change_digits = 2)
 # (B) when only a 2x2 (group x time) RM-ANOVA interaction F is given:
-# prepost_r_from_F(F_int = <interaction F>,
-#   m1b, s1b, m1p, s1p, n1, m2b, s2b, m2p, s2p, n2) |>
-#   kable(caption = "Implied pre-post r from the interaction F.") |>
-#   kable_classic(full_width = FALSE)
-# flag: impossible_high_r / impossible_low_r (change SD outside the feasible
-#   band) = [IMPOSSIBLE]; implausible_negative_r / implausibly_high_r = [IMPLAUSIBLE].
+# rc <- recalc::recalc_prepost_r_from_f(f = <F>,
+#         m1b, sd1b, m1p, sd1p, n1, m2b, sd2b, m2p, sd2p, n2,
+#         f_digits = 3, m_digits = 2, sd_digits = 3)
+#
+# POSSIBILITY (recalc): SDs can't coexist when the interval is wholly outside [-1,1]:
+#   impossible <- rc$recalculated_lower > 1 || rc$recalculated_upper < -1   # [IMPOSSIBLE]
+# PLAUSIBILITY (skill): for a possible r, label the point estimate:
+#   prepost_r_plausibility((rc$recalculated_lower + rc$recalculated_upper)/2)
+#   # implausible_negative / implausibly_high -> [IMPLAUSIBLE]; bands follow `within`.
+# rc |> kable(caption = "Implied pre-post r (recalculated interval).") |> kable_classic(full_width = FALSE)
 ```
 
 # Step 4 — Misalignment

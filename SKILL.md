@@ -54,10 +54,11 @@ the R for each lives in `scripts/helpers.R` (API notes in
    concern on this paper; the team's track record; registration consistency.
    Tag `[GOVERNANCE]`.
 1. **Numerical sanity** — recompute central statistics and show the arithmetic:
-   F ↔ partial η² (`eta_from_F`); r → t → p; **participant-flow forensics** (do
-   all the n's add up across CONSORT/text/tables? does df imply one N?); and, for
-   a trial baseline table, **baseline p-value recalculation** (`recalc_baseline_t`,
-   `recalc_baseline_chisq`). If the headline numbers cohere, say so explicitly.
+   F ↔ partial η² (`recalc::recalc_partial_eta_from_f`); r → t → p;
+   **participant-flow forensics** (do all the n's add up across CONSORT/text/
+   tables? does df imply one N?); and, for a trial baseline table, **baseline
+   p-value recalculation** (`recalc_baseline_t`, `recalc_baseline_chisq`). If the
+   headline numbers cohere, say so explicitly.
 2. **Possibility** — GRIM/GRIMMER on integer-scored means, run *separately by
    group × timepoint* (`grim_consistent`). When a block fails at its reported n,
    search alternative n (`grim_n_profile`, `implied_sum`). Also bounds (Popoviciu,
@@ -65,13 +66,15 @@ the R for each lives in `scripts/helpers.R` (API notes in
    Tag genuine failures `[IMPOSSIBLE]` with arithmetic.
 3. **Plausibility** — derive the effect sizes the paper omits (`metafor::escalc`)
    and test them against the design ceiling and the field. For pre/post data,
-   check **change-score coherence**: `prepost_r_from_change_sd()` when a change
-   SD is reported (or an independent t on change scores), or `prepost_r_from_F()`
-   from a 2×2 RM-ANOVA interaction F — both return the implied pre–post r and a
-   feasibility `flag` (impossible if the change SD is outside
-   `[|SD_pre−SD_post|, SD_pre+SD_post]`; implausible if r < 0 or r > .95). Watch
-   the SE-vs-SD swap. Carlisle-style baseline distribution (weak with few
-   variables). Tag `[IMPLAUSIBLE]` / `[IMPOSSIBLE]`.
+   check **change-score coherence** with `recalc`: `recalc::recalc_prepost_r()`
+   when a change SD is reported (or an independent t on change scores), or
+   `recalc::recalc_prepost_r_from_f()` from a 2×2 RM-ANOVA interaction F. recalc
+   returns the implied-r **interval** — *possibility* is read off it (the SDs
+   can't coexist when the interval lies wholly outside [−1, 1] → `[IMPOSSIBLE]`);
+   *plausibility* of a possible r is then judged with `prepost_r_plausibility()`
+   in `helpers.R` (r < 0 or r > .95 → `[IMPLAUSIBLE]`; bands follow DeBruine's
+   `within`). Watch the SE-vs-SD swap. Carlisle-style baseline distribution (weak
+   with few variables).
 4. **Misalignment** — measure↔construct, test↔inference, claim↔evidence. Tag
    `[MISALIGNMENT]`.
 5. **Conduct/governance/transparency** — ethics/registration timing, feasibility,

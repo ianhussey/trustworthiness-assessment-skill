@@ -8,7 +8,7 @@ first; it wraps most of this. Read this when you are writing the analysis chunks
 | Package | Source | Used for |
 |---|---|---|
 | `scrutiny` | CRAN | GRIM / GRIMMER |
-| `recalc` | Ian Hussey's package (`~/git/recalc`; `devtools::install("~/git/recalc")`) | baseline p recalculation, chi-sq recalc |
+| `recalc` (≥ 0.6) | Ian Hussey's package (`remotes::install_github("ianhussey/recalc")`) | baseline-p & chi-sq recalc; pre–post r; partial-η² ↔ F |
 | `statcheck` | CRAN | recompute p from t/F/r/χ² in reported *text* |
 | `metafor` | CRAN | `escalc()` for SMD / effect sizes you derive |
 | `tidyverse` | CRAN | wrangling, tables, plots |
@@ -106,14 +106,21 @@ Watch the **SE-vs-SD swap** — the single commonest effect-size error. If an SD
 looks impossibly small for the scale, test whether it is really an SE
 (`SD = SE * sqrt(n)`).
 
-## F ↔ partial η² and N
+## F ↔ partial η² and N — `recalc::recalc_partial_eta_from_f()`
 
-For a 1-df effect, `eta_p^2 = F / (F + df_error)`; `helpers.R::eta_from_F()`. A
-column of internally consistent F/η² also fixes `df_error = N − #groups`, i.e. the
-N every test assumes — cross-check against the stated completer count and the
-GRIM/alternative-n result.
+`eta_p² = F·df_effect / (F·df_effect + df_error)`. recalc propagates F's reporting
+precision to an interval and checks a reported η²:
 
-## Implied pre–post correlation (change-score coherence)
+```r
+recalc::recalc_partial_eta_from_f(f = 117.055, df_effect = 1, df_error = 76,
+                                  f_digits = 3, eta = 0.606, eta_digits = 3)
+```
+
+For a 1-df effect this also fixes `df_error = N − #groups`, i.e. the N every test
+assumes — cross-check against the stated completer count and the GRIM/alternative-n
+result.
+
+## Implied pre–post correlation (change-score coherence) — `recalc`
 
 A pre/post result is driven by the **change-score variance**, tied to the pre and
 post SDs by the identity
@@ -124,40 +131,59 @@ Var(change) = SD_pre² + SD_post² − 2·r·SD_pre·SD_post
 
 so a reported (or F-implied) change SD pins down the within-person pre–post
 correlation `r`. A real change SD must lie in `[ |SD_pre − SD_post| , SD_pre+SD_post ]`
-(the `r = +1` and `r = −1` limits); outside that band the three SDs cannot
-coexist. Two entry points, both returning `implied_r` + a `flag`:
+(the `r = +1` and `r = −1` limits); outside that band the three SDs cannot coexist.
+
+These live in **`recalc` (≥ 0.6)**, computed in closed form with the package's
+rounding-interval machinery (so each returns a recalculated `[lower, upper]`
+interval, not a point):
 
 ```r
-# (1) You have SD_pre, SD_post AND a change SD (a "change" row, or an independent
-#     t computed on change scores). Vectorised.
-prepost_r_from_change_sd(sd_pre, sd_post, sd_change)   # -> implied_r, change_sd_min/max, flag
+# (1) you have SD_pre, SD_post AND a change SD (a "change" row, or an independent
+#     t on change scores):
+recalc::recalc_prepost_r(sd_pre, sd_post, sd_change,
+                         sd_pre_digits = 2, sd_post_digits = 2, sd_change_digits = 2)
 
-# (2) You have a 2x2 (group x time) RM-ANOVA interaction F instead of a change SD.
-#     F = t² on the change scores pins the pooled change SD; r is back-solved
-#     (closed form, so it can return |r| > 1 to flag an F incompatible with the SDs).
-prepost_r_from_F(F_int = 117.055,
-  m1b, s1b, m1p, s1p, n1,     # group 1 baseline/post mean & sd, n
-  m2b, s2b, m2p, s2p, n2)     # group 2
-# implied_prepost_r() is a back-compatible alias for prepost_r_from_F().
+# (2) you have a 2x2 (group x time) RM-ANOVA interaction F instead of a change SD:
+recalc::recalc_prepost_r_from_f(f = 117.055,
+  m1b, sd1b, m1p, sd1p, n1,        # group 1 baseline/post mean & sd, n
+  m2b, sd2b, m2p, sd2p, n2,        # group 2
+  f_digits = 3, m_digits = 2, sd_digits = 3)
 
 # reverse direction — the change SD a "normal" r would produce:
-expected_change_sd(sd_pre, sd_post, r = 0.5)
+recalc::recalc_change_sd_from_r(sd_pre, sd_post, r = 0.5,
+                                sd_pre_digits = 2, sd_post_digits = 2, r_digits = 1)
 ```
 
-`flag` values and how to tag them:
+The analytic closed form is consistent with DeBruine's **`within`** package/app,
+which obtains the same quantity by simulation (`faux::rnorm_multi(..., empirical =
+TRUE)` + optimisation over r); the closed form avoids optimiser tolerance and
+exposes `|r| > 1`.
 
-| flag | meaning | tag |
+**Possibility (recalc).** Read it off the recalculated interval:
+
+```r
+res <- recalc::recalc_prepost_r(6.77, 7.45, 13.01, 2, 2, 2)
+impossible <- res$recalculated_lower > 1 || res$recalculated_upper < -1   # [IMPOSSIBLE]
+```
+
+**Plausibility (skill).** For a *possible* r, label it with `helpers.R`'s
+`prepost_r_plausibility(r)` — a measure-dependent judgement (not proof), with
+bands from `within` (plausible ≈ .25–.90, typical ≈ .5–.75):
+
+| label | meaning | tag |
 |---|---|---|
-| `impossible_high_r` | change SD `< |SD_pre − SD_post|` ⇒ r > 1 | `[IMPOSSIBLE]` |
-| `impossible_low_r` | change SD `> SD_pre + SD_post` ⇒ r < −1 | `[IMPOSSIBLE]` |
-| `implausible_negative_r` | r < 0 — pre/post of one scale rarely correlate negatively; forced when the change SD exceeds **both** component SDs | `[IMPLAUSIBLE]` |
-| `implausibly_high_r` | r > 0.95 — near-deterministic, unusually homogeneous response | `[IMPLAUSIBLE]` |
-| `ok` / `undefined` | plausible / non-finite (e.g. a zero or missing SD) | — |
+| `impossible` | `|r| > 1` (recalc already flags this via the interval) | `[IMPOSSIBLE]` |
+| `implausible_negative` | r < 0 — pre/post of one scale rarely correlate negatively; forced when the change SD exceeds **both** component SDs | `[IMPLAUSIBLE]` |
+| `implausibly_high` | r > .95 — near-deterministic, unusually homogeneous response | `[IMPLAUSIBLE]` |
+| `low_unusual` / `high_unusual` | outside `within`'s .25–.90 plausible band | note in-text |
+| `typical` / `plausible` / `undefined` | inside .5–.75 / inside .25–.90 / non-finite | — |
 
 Worked example (Gauhar 2016, TSC-40): the between-group test used change SD
-`13.01`. With the **table** component SDs `(6.77, 7.45)` that implies `r ≈ −0.673`
-(`implausible_negative_r` — the change SD exceeds both); with the **text** SDs
-`(14.58, 7.79)` it implies `r ≈ +0.458` (`ok`). The check pinpointed which of two
-contradictory SD sets was internally coherent. Caveats to state in-text: assumes
-the change SD is the SD of within-person differences; `prepost_r_from_F` assumes a
-single common r across groups. Validated in `tests/test-helpers.R`.
+`13.01`. With the **table** component SDs `(6.77, 7.45)` recalc gives an implied-r
+interval around `−0.673` (`prepost_r_plausibility` → `implausible_negative` — the
+change SD exceeds both component SDs); with the **text** SDs `(14.58, 7.79)` it
+gives `≈ +0.458` (`plausible`). The check pinpointed which of two contradictory SD
+sets was internally coherent. Caveats: assumes the change SD is the SD of
+within-person differences; `recalc_prepost_r_from_f` assumes a single common r
+across groups. Validated in recalc's `tests/testthat/test-prepost_r.R` and the
+skill's `tests/test-helpers.R`.

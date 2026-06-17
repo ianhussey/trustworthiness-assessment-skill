@@ -42,100 +42,39 @@ implied_sum <- function(mean_reported, n) {
 }
 
 # ---------------------------------------------------------------------------
-# partial eta-squared <-> F reconciliation for a 1-df effect.
-# For df_effect = 1: eta_p^2 = F / (F + df_error). df_error = N - #groups, so a
-# vector of consistent eta/F also pins down N (a participant-flow cross-check).
-# ---------------------------------------------------------------------------
-eta_from_F <- function(F, df_error, df_effect = 1) {
-  (F * df_effect) / (F * df_effect + df_error)
-}
-
-# ---------------------------------------------------------------------------
-# Implied pre-post (within-person) correlation checks.
+# Pre-post (within-person) correlation, partial eta^2, and F<->eta reconciliation
+# now live in the `recalc` package (>= 0.6), which computes them with the
+# package's rounding-interval machinery. Call them directly:
 #
-# A pre/post (repeated-measures) result is driven by the CHANGE-score variance,
-# which is tied to the pre and post SDs by the identity
-#       Var(change) = SD_pre^2 + SD_post^2 - 2 * r * SD_pre * SD_post,
-# so a reported (or F-implied) change SD pins down the within-person pre-post
-# correlation r. Two entry points, both returning an `implied_r` and a `flag`:
+#   recalc::recalc_prepost_r(sd_pre, sd_post, sd_change, *_digits)        # POSSIBILITY
+#   recalc::recalc_prepost_r_from_f(f, m/sd per group, n1, n2, *_digits)  # from RM-ANOVA F
+#   recalc::recalc_change_sd_from_r(sd_pre, sd_post, r, *_digits)         # reverse
+#   recalc::recalc_partial_eta_from_f(f, df_effect, df_error, f_digits)   # eta^2 <-> F
 #
-#   * prepost_r_from_change_sd()  -- you have SD_pre, SD_post AND a change SD
-#       (a "change" row in a table, or an independent t computed on change
-#       scores). This is the most common case.
-#   * prepost_r_from_F()          -- you have a 2x2 (group x time) RM-ANOVA
-#       interaction F instead of a change SD. F = t^2 on the change scores, so
-#       F pins the pooled change SD; r is then back-solved (assumes a common r
-#       across groups). Closed-form, so it can return |r| > 1 to flag an F that
-#       is incompatible with the reported SDs.
+# Each returns a recalc_result row with the recalculated [lower, upper] interval.
+# POSSIBILITY is read off that interval: for an implied r, the SDs cannot coexist
+# when the whole interval is > 1 or < -1.
 #
-# Feasibility: a real change SD must lie in [ |SD_pre - SD_post| , SD_pre+SD_post ]
-# (the r = +1 and r = -1 limits). `flag` values:
-#   impossible_high_r       change SD < |SD_pre - SD_post|  => r > 1    [IMPOSSIBLE]
-#   impossible_low_r        change SD > SD_pre + SD_post     => r < -1   [IMPOSSIBLE]
-#   implausible_negative_r  r < 0: the pre and post of one scale rarely correlate
-#                           negatively (a change SD above BOTH component SDs forces
-#                           it)                                          [IMPLAUSIBLE]
-#   implausibly_high_r      r > high_r (default .95): near-deterministic change, an
-#                           unusually homogeneous response               [IMPLAUSIBLE]
-#   ok / undefined          plausible / non-finite (e.g. a zero or missing SD)
-# Caveats: assumes the change SD is the SD of within-person differences; for
-# prepost_r_from_F, a single common r across groups.
+# PLAUSIBILITY (below) is the skill's layer: a measure-dependent judgement about
+# an implied r that *is* mathematically possible. Bands follow DeBruine's `within`
+# (plausible ~.25-.90, typical ~.5-.75); `faux` underlies within's simulation
+# approach. These are heuristics, not proof — a negative or near-1 within-person r
+# is unusual for a noisy clinical scale but not impossible.
 # ---------------------------------------------------------------------------
-
-.prepost_r_flag <- function(r, high_r = 0.95) {
+prepost_r_plausibility <- function(r, high = 0.95,
+                                   plausible = c(0.25, 0.90),
+                                   typical   = c(0.50, 0.75)) {
   dplyr::case_when(
-    !is.finite(r) ~ "undefined",
-    r >  1 + 1e-9 ~ "impossible_high_r",
-    r < -1 - 1e-9 ~ "impossible_low_r",
-    r <  0        ~ "implausible_negative_r",
-    r >  high_r   ~ "implausibly_high_r",
-    TRUE          ~ "ok"
+    !is.finite(r)                       ~ "undefined",
+    r > 1 | r < -1                      ~ "impossible",            # recalc territory
+    r < 0                               ~ "implausible_negative",  # [IMPLAUSIBLE]
+    r > high                            ~ "implausibly_high",      # [IMPLAUSIBLE]
+    r < plausible[1]                    ~ "low_unusual",
+    r > plausible[2]                    ~ "high_unusual",
+    r >= typical[1] & r <= typical[2]   ~ "typical",
+    TRUE                                ~ "plausible"
   )
 }
-
-# Reverse direction: the change SD expected for a given pre-post correlation.
-expected_change_sd <- function(sd_pre, sd_post, r) {
-  sqrt(pmax(sd_pre^2 + sd_post^2 - 2 * r * sd_pre * sd_post, 0))
-}
-
-prepost_r_from_change_sd <- function(sd_pre, sd_post, sd_change,
-                                     high_r = 0.95, digits = 3) {
-  stopifnot(length(sd_pre) == length(sd_post),
-            length(sd_post) == length(sd_change))
-  r <- (sd_pre^2 + sd_post^2 - sd_change^2) / (2 * sd_pre * sd_post)
-  r[sd_pre <= 0 | sd_post <= 0 | sd_change < 0] <- NA_real_   # invalid inputs
-  tibble::tibble(
-    sd_pre, sd_post, sd_change,
-    implied_r     = round(r, digits),
-    change_sd_min = round(abs(sd_pre - sd_post), digits),     # change SD at r = +1
-    change_sd_max = round(sd_pre + sd_post, digits),          # change SD at r = -1
-    flag          = .prepost_r_flag(r, high_r)
-  )
-}
-
-prepost_r_from_F <- function(F_int, m1b, s1b, m1p, s1p, n1,
-                                    m2b, s2b, m2p, s2p, n2,
-                             high_r = 0.95, digits = 3) {
-  diff_change     <- (m1p - m1b) - (m2p - m2b)
-  s_pooled_change <- abs(diff_change) / (sqrt(F_int) * sqrt(1/n1 + 1/n2))
-  # pooled Var(change) = A - B*r is linear in a common r -> solve in closed form.
-  Nden <- n1 + n2 - 2
-  A <- ((n1 - 1) * (s1b^2 + s1p^2)   + (n2 - 1) * (s2b^2 + s2p^2))   / Nden
-  B <- ((n1 - 1) * (2 * s1b * s1p)   + (n2 - 1) * (2 * s2b * s2p))   / Nden
-  r <- (A - s_pooled_change^2) / B
-  tibble::tibble(
-    pooled_change_sd = round(s_pooled_change, digits),
-    implied_r        = round(r, digits),
-    change_sd_g1     = round(expected_change_sd(s1b, s1p, r), digits),
-    change_sd_g2     = round(expected_change_sd(s2b, s2p, r), digits),
-    baseline_sd_g1 = s1b, post_sd_g1 = s1p,
-    baseline_sd_g2 = s2b, post_sd_g2 = s2p,
-    flag = .prepost_r_flag(r, high_r)
-  )
-}
-
-# Backwards-compatible alias (older templates/qmds call implied_prepost_r()).
-implied_prepost_r <- prepost_r_from_F
 
 # ---------------------------------------------------------------------------
 # Baseline p-value recalculation (recalc). Does each reported baseline p cohere

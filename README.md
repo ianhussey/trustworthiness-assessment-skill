@@ -73,14 +73,14 @@ works on every Claude Code surface. Installing by either route only *fetches* th
 ## Dependencies (one-time local setup)
 
 Install **R** and **Quarto** on your machine, then the R packages — `scrutiny`, `statcheck`, `metafor`, `tidyverse`, `kableExtra` (all CRAN) and
-[`recalc`](https://github.com/ianhussey/recalc) (Ian Hussey's package):
+[`recalc`](https://github.com/ianhussey/recalc) **(≥ 0.6)** — Ian Hussey's package, which provides the baseline-p, partial-η², and pre–post-r recalculation checks:
 
 ```r
 install.packages(c("tidyverse", "metafor", "scrutiny", "statcheck", "kableExtra", "remotes"))
-remotes::install_github("ianhussey/recalc")
+remotes::install_github("ianhussey/recalc")   # needs >= 0.6
 ```
 
-If `recalc` is absent, skip the baseline-p step and note it. See `references/r-cookbook.md` for the per-package API notes (including the scrutiny ≥0.6 `digits_x` change).
+If `recalc` is absent, skip the recalc-based steps (baseline-p, partial-η², pre–post-r) and note it. See `references/r-cookbook.md` for the per-package API notes (including the scrutiny ≥0.6 `digits_x` change).
 
 
 
