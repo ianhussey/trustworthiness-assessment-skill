@@ -1,0 +1,13 @@
+{
+  "name": "ianhussey-skills",
+  "owner": {
+    "name": "Ian Hussey"
+  },
+  "plugins": [
+    {
+      "name": "trustworthiness-assessment",
+      "source": "./",
+      "description": "Forensic trustworthiness assessment of research papers and clinical trials: GRIM/GRIMMER, statcheck, baseline p-value recalculation, effect-size and trial-registration consistency checks; produces a classified verdict."
+    }
+  ]
+}

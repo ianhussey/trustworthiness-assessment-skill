@@ -11,6 +11,9 @@ narrower than general peer review.
 ```
 trustworthiness-assessment-skill/
 ├── SKILL.md                       # skill driver: trigger description, workflow, output format
+├── .claude-plugin/
+│   ├── plugin.json                # plugin manifest (enables /plugin install)
+│   └── marketplace.json           # marketplace catalog (enables /plugin marketplace add)
 ├── references/
 │   ├── forensic-method.md         # canonical method + stance (Step 0–5 taxonomy) — read first
 │   └── r-cookbook.md              # scrutiny / recalc / statcheck / metafor API notes + snippets
@@ -24,24 +27,70 @@ trustworthiness-assessment-skill/
 references, which load on demand. The method itself lives in
 `references/forensic-method.md`.
 
-## Install as a skill
+## Install
 
-Copy or symlink the repo into your Claude skills directory under the skill's
-name (`trustworthiness-assessment`):
+Two pathways. **A** is the easiest for others — installs from GitHub with
+auto-updates. **B** needs no plugin system and is handy for hacking on the skill.
+
+### A. Plugin marketplace (recommended, installs from GitHub)
+
+This repo ships a marketplace manifest (`.claude-plugin/marketplace.json`) and a
+plugin manifest (`.claude-plugin/plugin.json`), so it is installable as a plugin.
+Inside any Claude Code session, run:
+
+```text
+/plugin marketplace add ianhussey/trustworthiness-assessment-skill
+/plugin install trustworthiness-assessment@ianhussey-skills
+```
+
+The first command registers this repo as a marketplace named `ianhussey-skills`;
+the second installs the `trustworthiness-assessment` plugin from it. Update later
+with `/plugin marketplace update ianhussey-skills`. Installing only *fetches* the
+repo — no code runs until you invoke the skill (see [Security](#scope--security)).
+
+### B. Manual clone (no plugin system)
+
+A skill is just a folder with `SKILL.md` at its root, so you can drop this repo
+straight into a skills directory:
 
 ```sh
-ln -s "$PWD" ~/.claude/skills/trustworthiness-assessment        # personal, all projects
+git clone https://github.com/ianhussey/trustworthiness-assessment-skill \
+  ~/.claude/skills/trustworthiness-assessment            # personal, all projects
 # or, per project:
-ln -s "$PWD" /path/to/project/.claude/skills/trustworthiness-assessment
+git clone https://github.com/ianhussey/trustworthiness-assessment-skill \
+  /path/to/project/.claude/skills/trustworthiness-assessment
 ```
+
+Update with `git -C <that dir> pull`. (The folder name need not match the
+`name:` in `SKILL.md`, but a clean name is tidier.)
+
+## Using the skill in Claude
+
+Once installed it is **auto-discovered** on the next session start — no enable
+step — across the Claude Code CLI, desktop app, and project sessions. Two ways to
+use it:
+
+- **Invoke directly** from the `/` menu — type `/` and pick
+  `trustworthiness-assessment` (plugin-installed skills are namespaced, so it may
+  appear as `trustworthiness-assessment:trustworthiness-assessment`; run `/help`
+  after install to see the exact name). Then point it at the paper, e.g.
+  *"assess the PDF in `pdfs/`, the registration is the CSV beside it."*
+- **Let Claude trigger it** by describing the task in plain language — e.g.
+  *"do a trustworthiness assessment of this trial"*, *"can these reported numbers
+  be trusted?"*, *"GRIM-check this baseline table"*, *"recalculate the baseline
+  p-values"*. The `description` in `SKILL.md` is written to fire on these.
+
+Give Claude the article (PDF/text) and, for a trial, the registration record; it
+then works the Step 0–5 workflow and produces the classified verdict.
 
 ## R dependencies
 
 `scrutiny`, `statcheck`, `metafor`, `tidyverse`, `kableExtra` (all CRAN) and
-[`recalc`](https://github.com/) — Ian Hussey's package, installed locally:
+[`recalc`](https://github.com/ianhussey/recalc) — Ian Hussey's package:
 
 ```r
-devtools::install("~/git/recalc")
+# install.packages("remotes")
+remotes::install_github("ianhussey/recalc")
 ```
 
 If `recalc` is absent, skip the baseline-p step and note it. See

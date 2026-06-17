@@ -1,0 +1,11 @@
+{
+  "name": "trustworthiness-assessment",
+  "description": "Forensic trustworthiness assessment of research papers and clinical trials: GRIM/GRIMMER, statcheck, baseline p-value recalculation, effect-size and trial-registration consistency checks; produces a classified verdict (trustworthy / concerns pending / not trustworthy).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ian Hussey"
+  },
+  "repository": "https://github.com/ianhussey/trustworthiness-assessment-skill",
+  "homepage": "https://github.com/ianhussey/trustworthiness-assessment-skill",
+  "license": "MIT"
+}
