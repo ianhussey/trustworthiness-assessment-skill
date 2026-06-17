@@ -25,16 +25,18 @@ writeup rather than failing silently.
 confusing "specify digits_x" error.
 
 ```r
-# CORRECT (0.6.2):
+# CORRECT (0.6.2): the scalar grim() is vectorised over x (recycles n):
+scrutiny::grim(x = c(15.95, 15.19), n = 26, digits_x = 2)            # FALSE TRUE
+# the data-frame form (string-x columns are defunct; pass numeric + digits_x):
 scrutiny::grim_map(tibble(x = c(15.95, 15.19), n = c(26L, 26L)), digits_x = 2)
 scrutiny::grimmer_map(tibble(x = 8.96, sd = 5.237, n = 52L), digits_x = 2, digits_sd = 3)
 ```
 
-Because this API has churned across versions, `helpers.R` ships a base-R
-`grim_consistent(mean, n, digits, items)` that is version-proof and is what the
-template uses. GRIM only applies to **integer totals** (sum of integer items).
-Per-item means use `items = #items`. Zung SDS/SAS *index* scores (raw × 1.25) are
-NOT integer-grained → exclude.
+`helpers.R::grim_consistent(mean, n, digits, items)` is a thin adapter over
+`scrutiny::grim()` (maps `digits`→`digits_x`, stays vectorised); use either. GRIM
+only applies to **integer totals** (sum of integer items). Per-item means use
+`items = #items`. Zung SDS/SAS *index* scores (raw × 1.25) are NOT integer-grained
+→ exclude.
 
 ### The high-value pattern: GRIM by block + alternative-n search
 

@@ -10,15 +10,14 @@
 
 # ---------------------------------------------------------------------------
 # GRIM — is a reported mean achievable as (integer sum) / n for an integer total?
-# `items` > 1 only if the reported value is a per-ITEM mean (total / items);
-# for a raw total score leave items = 1. Robust to scrutiny API churn.
+# Thin adapter over scrutiny::grim() (the canonical GRIM implementation): maps the
+# skill's `digits` convention to scrutiny's `digits_x` and stays vectorised over
+# `mean_reported` (recycling `n`), so grim_n_profile() and the table-wise calls in
+# the template keep working. `items` > 1 only if the reported value is a per-ITEM
+# mean (total / items); for a raw total score leave items = 1.
 # ---------------------------------------------------------------------------
 grim_consistent <- function(mean_reported, n, digits = 2, items = 1) {
-  tol  <- 0.5 * 10^(-digits)
-  gran <- 1 / (n * items)                       # granularity of an integer-sum mean
-  k_lo <- ceiling((mean_reported - tol) / gran - 1e-9)
-  k_hi <- floor(  (mean_reported + tol) / gran + 1e-9)
-  k_lo <= k_hi
+  scrutiny::grim(x = mean_reported, n = n, digits_x = digits, items = items)
 }
 
 # THE forensic move when GRIM fails at the reported n: which n WOULD make a whole
