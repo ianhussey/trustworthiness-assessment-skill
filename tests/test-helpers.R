@@ -53,6 +53,31 @@ if (requireNamespace("scrutiny", quietly = TRUE)) {
 }
 ok(tryCatch({ grim_n_profile(c(15.95), 20:26); FALSE }, error = function(e) TRUE),
    "grim_n_profile requires explicit digits (no silent precision default)")
+# scrutiny::grim takes a VECTOR digits_x (per-value precision)
+if (requireNamespace("scrutiny", quietly = TRUE)) {
+  ok(identical(unname(scrutiny::grim(c(13.50, 8.965), c(52, 52), digits_x = c(2, 3))),
+               c(TRUE, FALSE)),
+     "per-value digits_x vector honoured (13.50@2dp vs 8.965@3dp)")
+}
+
+cat("== precision discipline: no digit defaults / inference ==\n")
+ok(!exists("p_decimals"),
+   "p_decimals inference helper removed (would miss trailing zeros)")
+base_df <- tibble::tibble(variable = "HAMD", m1 = 24.71, sd1 = 4.137,
+                          m2 = 24.81, sd2 = 3.774, p = .921)  # no *_digits cols
+ok(tryCatch({ recalc_baseline_t(base_df, 52, 26); FALSE },
+            error = function(e) grepl("digits", conditionMessage(e))),
+   "recalc_baseline_t errors when m_digits/sd_digits/p_digits columns are absent")
+ok(tryCatch({ recalc_baseline_chisq(matrix(c(36,16,23,3), 2, byrow = TRUE), .082); FALSE },
+            error = function(e) grepl("p_digits", conditionMessage(e))),
+   "recalc_baseline_chisq errors when p_digits not given")
+if (requireNamespace("recalc", quietly = TRUE)) {
+  base_ok <- tibble::tibble(variable = "HAMD", m1 = 24.71, sd1 = 4.137,
+                            m2 = 24.81, sd2 = 3.774, p = .921,
+                            m_digits = 2, sd_digits = 3, p_digits = 3)
+  res <- recalc_baseline_t(base_ok, 52, 26)
+  ok(nrow(res) == 1 && isTRUE(res$reproduced), "recalc_baseline_t with explicit digits reproduces HAMD baseline p")
+}
 
 cat(sprintf("\n%s  (%d failures)\n", if (.fails == 0) "ALL TESTS PASSED" else "TESTS FAILED", .fails))
 if (.fails > 0) quit(status = 1)

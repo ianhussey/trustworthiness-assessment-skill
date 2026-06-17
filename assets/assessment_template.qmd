@@ -48,7 +48,7 @@ library(knitr)
 library(kableExtra)
 
 source("helpers.R")  # skill glue: grim_n_profile, implied_sum, recalc_baseline_t/_chisq,
-                     # prepost_r_plausibility, p_decimals (copy alongside this file).
+                     # prepost_r_plausibility (copy alongside this file).
                      # Stats engines called directly: scrutiny::grim*, recalc::* .
 ```
 
@@ -78,14 +78,24 @@ TRIAL REGISTRATION compared field-by-field to the paper. Tag [GOVERNANCE]. -->
 
 <!-- Hand-key reported stats. Keep group/time/n explicit. `integer` flags whether
 the score is an integer total (GRIM-eligible). Zung SDS/SAS index = raw x 1.25
-are NOT integer-grained. -->
+are NOT integer-grained.
+
+PRECISION RULE (non-negotiable). Key EVERY estimate at its full reported
+precision, INCLUDING TRAILING ZEROS, and record the decimal count for each in an
+explicit `*_digits` column. R drops trailing zeros from numerics (you type 13.50,
+R stores 13.5), so the digit count — not the keyed number — is what carries the
+precision into GRIM and the recalc intervals. NEVER default or infer digits: a
+mean printed "13.50" is 2 dp, "0.050" is 3 dp, and getting this wrong flips
+GRIM/recalc verdicts. Capture mean_digits / sd_digits / p_digits as you extract,
+straight from how the paper prints each value. -->
 
 ```{r extract-data}
+# Record reported precision per value (incl. trailing zeros) in *_digits columns.
 # dat <- tribble(
-#   ~variable, ~integer, ~condition, ~time, ~n, ~mean, ~sd,
+#   ~variable, ~integer, ~condition, ~time, ~n, ~mean, ~mean_digits, ~sd, ~sd_digits,
 #   ...
 # )
-# anova_tab <- tribble(~variable, ~F, ~eta_reported, ...)   # if RM-ANOVA reported
+# anova_tab <- tribble(~variable, ~F, ~f_digits, ~eta_reported, ~eta_digits, ...)
 ```
 
 # Step 1 — Numerical sanity check
@@ -93,8 +103,9 @@ are NOT integer-grained. -->
 ## F ↔ partial η² (and the N it implies)
 
 ```{r eta-F}
+# f_digits / eta_digits = the reported decimal places (incl. trailing zeros):
 # recalc::recalc_partial_eta_from_f(f = <F>, df_effect = 1, df_error = <df>,
-#   f_digits = 3, eta = <reported eta^2>, eta_digits = 3)   # $consistent
+#   f_digits = <F dp>, eta = <reported eta^2>, eta_digits = <eta dp>)   # $consistent
 # (df_error = N - #groups also cross-checks the N every test assumes.)
 ```
 
@@ -119,16 +130,17 @@ A reported p OUTSIDE its recomputed hull = [IMPOSSIBLE]. If all reproduce, SAY S
 check in Step 3 — weak with few variables. -->
 
 ```{r recalc-baseline}
+# Every row carries its reported decimal places (incl. trailing zeros): no defaults.
 # baseline_cont <- tribble(
-#   ~variable, ~m1, ~sd1, ~m2, ~sd2, ~p,
-#   "HAMD", 24.71, 4.137, 24.81, 3.774, .921,
+#   ~variable, ~m1, ~sd1, ~m2, ~sd2, ~p, ~m_digits, ~sd_digits, ~p_digits,
+#   "HAMD", 24.71, 4.137, 24.81, 3.774, .921,  2, 3, 3,
 #   ...
 # )
 # recalc_baseline_t(baseline_cont, n1 = <n1>, n2 = <n2>) |>
 #   kable(caption = "Reported vs recomputed baseline p (multiverse hull).") |>
 #   kable_classic(full_width = FALSE)
-# # categorical row:
-# recalc_baseline_chisq(matrix(c(a,b,c,d), nrow = 2, byrow = TRUE), p = .082)
+# # categorical row (state p_digits, incl. trailing zeros):
+# recalc_baseline_chisq(matrix(c(a,b,c,d), nrow = 2, byrow = TRUE), p = .082, p_digits = 3)
 ```
 
 # Step 2 — Possibility: GRIM / GRIMMER
@@ -141,9 +153,10 @@ arithmetic; distinguish rounding artifacts from true contradictions. Also: bound
 correlation matrix) and coherence (part-whole; bootstrap-CI-vs-p). -->
 
 ```{r grim-block}
-# GRIM is scrutiny's; state the reporting precision via digits_x.
+# GRIM is scrutiny's; pass the per-value reported precision (incl. trailing zeros)
+# from the mean_digits column — scrutiny::grim's digits_x is vectorised.
 # grim_res <- dat |> filter(integer) |>
-#   mutate(GRIM = scrutiny::grim(mean, n, digits_x = 2)) |>     # vectorised
+#   mutate(GRIM = scrutiny::grim(mean, n, digits_x = mean_digits)) |>
 # grim_res |> group_by(condition, time) |>
 #   summarise(pass = sum(GRIM), total = n(), .groups = "drop") |>
 #   kable() |> kable_classic(full_width = FALSE)
@@ -151,14 +164,15 @@ correlation matrix) and coherence (part-whole; bootstrap-CI-vs-p). -->
 
 ```{r grim-altn}
 # failing <- dat |> filter(integer, condition == "<arm>", time == "<time>")
-# prof <- grim_n_profile(failing$mean, n_range = 15:40, digits = 2)  # skill sweep
+# prof <- grim_n_profile(failing$mean, n_range = 15:40, digits = failing$mean_digits)
 # ggplot(prof, aes(n, consistent)) + geom_col() + theme_minimal()
 # map_dfr(failing$mean, implied_sum, n = <peak_n>)   # residual ~0 confirms
 ```
 
 ```{r grimmer}
+# digits_x / digits_sd come from the reported precision (incl. trailing zeros):
 # scrutiny::grimmer_map(dat |> filter(integer) |> transmute(x = mean, sd, n),
-#                       digits_x = 2, digits_sd = 3) |>
+#                       digits_x = <mean dp>, digits_sd = <sd dp>) |>
 #   select(x, sd, n, consistency)   # more assumption-laden; report cautiously
 ```
 
@@ -176,13 +190,14 @@ Tag [IMPLAUSIBLE] / [IMPOSSIBLE]. -->
 ```{r implied-r}
 # Change-score coherence -> implied within-person pre-post r (recalc >= 0.6).
 # recalc returns the recalculated [lower, upper] interval (rounding-propagated).
+# All *_digits = the reported decimal places (incl. trailing zeros); never default.
 # (A) when a change SD is reported (or an independent t was run on change scores):
 # rc <- recalc::recalc_prepost_r(sd_pre = , sd_post = , sd_change = ,
-#         sd_pre_digits = 2, sd_post_digits = 2, sd_change_digits = 2)
+#         sd_pre_digits = <dp>, sd_post_digits = <dp>, sd_change_digits = <dp>)
 # (B) when only a 2x2 (group x time) RM-ANOVA interaction F is given:
 # rc <- recalc::recalc_prepost_r_from_f(f = <F>,
 #         m1b, sd1b, m1p, sd1p, n1, m2b, sd2b, m2p, sd2p, n2,
-#         f_digits = 3, m_digits = 2, sd_digits = 3)
+#         f_digits = <dp>, m_digits = <dp>, sd_digits = <dp>)
 #
 # POSSIBILITY (recalc): SDs can't coexist when the interval is wholly outside [-1,1]:
 #   impossible <- rc$recalculated_lower > 1 || rc$recalculated_upper < -1   # [IMPOSSIBLE]

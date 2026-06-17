@@ -3,6 +3,25 @@
 API notes and copy-paste snippets for the R tooling. Load `scripts/helpers.R`
 first; it wraps most of this. Read this when you are writing the analysis chunks.
 
+## Precision: never default or infer digit counts
+
+Every granularity (GRIM/GRIMMER) and recalc check is a function of the **exact
+reported precision** of each value — the decimals it was *printed* to, **including
+trailing zeros** (`13.50` = 2 dp, `0.050` = 3 dp). R drops trailing zeros from
+numerics (`13.50` → `13.5`), so the keyed number cannot carry precision: you must
+record a digit count per value and pass it to every `digits` / `digits_x` /
+`*_digits` argument.
+
+- `scrutiny::grim()` and all `recalc_*` functions take **mandatory** digit
+  arguments (no defaults) — this is deliberate, not friction.
+- The skill helpers follow suit: `grim_n_profile(means, n_range, digits)` and
+  `recalc_baseline_chisq(counts, p, p_digits)` require digits; `recalc_baseline_t`
+  requires per-row `m_digits` / `sd_digits` / `p_digits` columns. There is **no**
+  `p_decimals`-style inference helper — inferring digits from a numeric would miss
+  trailing zeros and silently flip verdicts.
+- Carry precision in the extracted data as explicit `*_digits` columns; for GRIM,
+  `digits_x` may be a vector (per-value precision).
+
 ## Packages & install
 
 | Package | Source | Used for |
@@ -74,8 +93,10 @@ g <- recalc::recalc_chisq_p(counts = matrix(c(a,b,c,d), nrow = 2, byrow = TRUE),
 dplyr::distinct(g$reproduced)
 ```
 
-`helpers.R` wraps these as `recalc_baseline_t(df, n1, n2)` (one row per continuous
-variable: `variable/m1/sd1/m2/sd2/p`) and `recalc_baseline_chisq(counts, p)`.
+`helpers.R` wraps these as `recalc_baseline_t(df, n1, n2)` — `df` is one row per
+continuous variable with columns `variable, m1, sd1, m2, sd2, p` **plus the
+reported precision per row: `m_digits, sd_digits, p_digits`** (no defaults) — and
+`recalc_baseline_chisq(counts, p, p_digits)` (p_digits required).
 
 - **A reported p OUTSIDE its hull = `[IMPOSSIBLE]`** (cannot come from the reported
   m/sd/n under any standard test).

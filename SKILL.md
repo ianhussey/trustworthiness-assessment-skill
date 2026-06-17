@@ -35,6 +35,15 @@ outcome — do not manufacture problems.
 - **Get the registration and any supplements.** For a trial, pull the
   ClinicalTrials.gov (or other) record and compare it field-by-field to the
   paper — registries drift less than manuscripts.
+- **Extract every estimate at full reported precision — including trailing
+  zeros — and record its decimal count explicitly.** GRIM/GRIMMER and every
+  recalc interval depend on the exact number of decimals a value was *printed*
+  to ("13.50" is 2 dp, "0.050" is 3 dp). R silently drops trailing zeros
+  (`13.50` → `13.5`), so the keyed number cannot carry the precision — capture a
+  `*_digits` count for each value as you extract, straight from the paper. Pass
+  it to every `digits` / `digits_x` / `*_digits` argument. **Never default or
+  infer a digit count** — the helpers and `recalc` deliberately refuse to, and
+  the wrong count flips verdicts.
 - **Read `references/forensic-method.md` first.** It is the canonical method
   (full Step 0–5 taxonomy + the stance you must adopt). This SKILL.md is only the
   driver. Re-read its **Stance** section before judging anything: burden of proof
@@ -88,8 +97,10 @@ the R for each lives in `scripts/helpers.R` (API notes in
    `code/<firstauthor>_<year>_trustworthiness_assessment.qmd`) **and copy
    `scripts/helpers.R` alongside it** (the template does `source("helpers.R")`).
 2. Hand-key every reported statistic into the `dat` / `anova_tab` / baseline
-   objects. Mark each scale integer vs non-integer (GRIM only applies to integer
-   totals; e.g. Zung SDS/SAS index scores are *not* integer-grained).
+   objects **at full reported precision (incl. trailing zeros), with an explicit
+   `*_digits` column for each value** (see the precision rule above). Mark each
+   scale integer vs non-integer (GRIM only applies to integer totals; e.g. Zung
+   SDS/SAS index scores are *not* integer-grained).
 3. Work the steps; render with `quarto render`. Every quantitative claim in the
    writeup must be reproducible from a chunk.
 

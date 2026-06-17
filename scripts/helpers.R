@@ -6,6 +6,15 @@
 # Packages used (load in the .qmd, not here): scrutiny, recalc, metafor, tibble,
 #   dplyr, purrr. `recalc` is Ian Hussey's package (github: ~/git/recalc);
 #   scrutiny/statcheck/metafor are on CRAN. See references/r-cookbook.md.
+#
+# PRECISION (non-negotiable). GRIM/GRIMMER and every recalc interval depend on the
+# EXACT reported precision of each value — the number of decimal places it was
+# printed to, INCLUDING TRAILING ZEROS ("13.50" is 2 dp, "0.050" is 3 dp). R drops
+# trailing zeros from numerics (13.50 -> 13.5), so precision cannot be recovered
+# from the keyed value. Therefore: extract every estimate at full reported
+# precision, record its decimal count explicitly, and pass it to every
+# digits / digits_x / *_digits argument. These functions take NO digit defaults
+# and do NO inference — by design.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -21,10 +30,13 @@
 # block of reported means mutually consistent? A sharp single peak at a DIFFERENT
 # n than reported points to an undisclosed sample size (dropout / per-protocol
 # subset / altered values); a flat profile points to non-integer data or genuinely
-# anomalous values. `digits` must match the reporting precision of `means`.
+# anomalous values. `digits` must match the reporting precision of `means`
+# (incl. trailing zeros); it may be a scalar or a vector matching `means`. No
+# default — precision is never assumed.
 # ---------------------------------------------------------------------------
 grim_n_profile <- function(means, n_range, digits, items = 1) {
-  if (missing(digits)) stop("Specify `digits` = the decimal places `means` were reported to.")
+  if (missing(digits)) stop("Specify `digits` = the decimal places `means` were reported to (incl. trailing zeros).", call. = FALSE)
+  stopifnot(length(digits) == 1L || length(digits) == length(means))
   tibble::tibble(n = n_range) |>
     dplyr::rowwise() |>
     dplyr::mutate(
@@ -81,22 +93,31 @@ prepost_r_plausibility <- function(r, high = 0.95,
 # rounding x direction); we summarise as [min_p, max_p] and whether the reported
 # p falls inside that hull. A reported p OUTSIDE the hull is the flag — it cannot
 # arise from the reported summary stats under any standard test => [IMPOSSIBLE].
-# Pass one row per continuous baseline variable: columns variable/m1/sd1/m2/sd2/p.
-# n1/n2 are the GROUP sizes (group 1 must be the m1/sd1 group).
+#
+# PRECISION: the reported decimal places (incl. trailing zeros) of EVERY value
+# drive the recalculation, and R numerics silently drop trailing zeros, so the
+# digit counts are NEVER defaulted or inferred — `df` must carry them per row.
+# Required `df` columns:
+#   variable, m1, sd1, m2, sd2, p,        # group 1 = m1/sd1; group 2 = m2/sd2
+#   m_digits, sd_digits, p_digits         # decimal places each was reported to
+# n1/n2 are the GROUP sizes.
 # ---------------------------------------------------------------------------
-p_decimals <- function(p) {                       # how many dp the p was reported to
-  s <- format(p, scientific = FALSE, trim = TRUE)
-  if (!grepl(".", s, fixed = TRUE)) return(0L)
-  nchar(strsplit(s, ".", fixed = TRUE)[[1]][2])
-}
-
-recalc_baseline_t <- function(df, n1, n2, m_digits = 2, sd_digits = 3) {
-  purrr::pmap_dfr(df, function(variable, m1, sd1, m2, sd2, p) {
-    r  <- recalc::recalc_independent_t_p(
+recalc_baseline_t <- function(df, n1, n2) {
+  req <- c("variable", "m1", "sd1", "m2", "sd2", "p",
+           "m_digits", "sd_digits", "p_digits")
+  miss <- setdiff(req, names(df))
+  if (length(miss)) {
+    stop("recalc_baseline_t: df missing required column(s): ",
+         paste(miss, collapse = ", "),
+         ". Record the reported decimal places (including trailing zeros) of ",
+         "every value as m_digits / sd_digits / p_digits.", call. = FALSE)
+  }
+  purrr::pmap_dfr(df, function(variable, m1, sd1, m2, sd2, p,
+                               m_digits, sd_digits, p_digits, ...) {
+    rp <- dplyr::distinct(recalc::recalc_independent_t_p(
       m1 = m1, m2 = m2, sd1 = sd1, sd2 = sd2, n1 = n1, n2 = n2,
       m_digits = m_digits, sd_digits = sd_digits,
-      p = p, p_digits = p_decimals(p))
-    rp <- dplyr::distinct(r$reproduced)
+      p = p, p_digits = p_digits)$reproduced)
     tibble::tibble(variable, reported_p = p,
                    recomputed_min = round(rp$min_p, 3),
                    recomputed_max = round(rp$max_p, 3),
@@ -104,8 +125,13 @@ recalc_baseline_t <- function(df, n1, n2, m_digits = 2, sd_digits = 3) {
   })
 }
 
-# Categorical baseline row (e.g. sex). Returns the one-row reproduced summary.
-recalc_baseline_chisq <- function(counts, p, p_digits = p_decimals(p)) {
+# Categorical baseline row (e.g. sex). `p_digits` (the reported decimal places of
+# p, including trailing zeros) is REQUIRED — never defaulted or inferred.
+recalc_baseline_chisq <- function(counts, p, p_digits) {
+  if (missing(p_digits)) {
+    stop("recalc_baseline_chisq: specify `p_digits` = the reported decimal ",
+         "places of p (including trailing zeros).", call. = FALSE)
+  }
   rp <- dplyr::distinct(
     recalc::recalc_chisq_p(counts = counts, p = p, p_digits = p_digits)$reproduced)
   tibble::tibble(reported_p = p,
@@ -116,7 +142,8 @@ recalc_baseline_chisq <- function(counts, p, p_digits = p_decimals(p)) {
 
 # ---------------------------------------------------------------------------
 # Display helper: round-half-up to fixed decimals (SPSS-style), for parity with
-# how papers print numbers.
+# how papers print numbers. DISPLAY ONLY — `digits` here is how many places to
+# PRINT, unrelated to the reported-precision counts that drive GRIM/recalc.
 # ---------------------------------------------------------------------------
 round_half_up_min_decimals <- function(x, digits = 2) {
   sprintf(paste0("%.", digits, "f"), scrutiny::reround(x, digits = digits)[[1]])

@@ -12,6 +12,7 @@ This is a falsification-oriented task. Do not produce a balanced "strengths and 
 
 1. **Work only from the actual article.** If given a link you cannot retrieve, or a DOI/PII with no content, say so and ask for the full text. Do not reconstruct the paper from memory, from the abstract, or from what a paper with that title "probably" says. An assessment built on guessed content is worse than none.
 2. **If supplementary materials, data, or a preregistration are referenced, ask whether they can be provided** before drawing conclusions that depend on them. Note explicitly which findings would change if the supplement contradicted the main text.
+3. **Extract every reported estimate at its full printed precision, including trailing zeros, and record the decimal count explicitly for each value.** Granularity tests (GRIM/GRIMMER) and any recalculation of a *p*/effect size from rounded summaries depend on the exact number of decimals a value was reported to — "13.50" is two decimals, not one; "0.050" is three. Most software (and R specifically) silently drops trailing zeros, so the count must be captured as you read the paper, never inferred from a stored number and never defaulted. The wrong precision flips a GRIM verdict or mis-sizes a recomputed interval.
 
 ## Stance (read this before judging anything)
 
