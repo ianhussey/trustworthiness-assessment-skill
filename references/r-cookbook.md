@@ -32,8 +32,10 @@ scrutiny::grim_map(tibble(x = c(15.95, 15.19), n = c(26L, 26L)), digits_x = 2)
 scrutiny::grimmer_map(tibble(x = 8.96, sd = 5.237, n = 52L), digits_x = 2, digits_sd = 3)
 ```
 
-`helpers.R::grim_consistent(mean, n, digits, items)` is a thin adapter over
-`scrutiny::grim()` (maps `digits`→`digits_x`, stays vectorised); use either. GRIM
+Call `scrutiny::grim()` directly — the skill does **not** re-export GRIM (a
+wrapper with a default `digits` would silently assume precision, the footgun
+`scrutiny`'s mandatory `digits_x` exists to prevent). The skill adds only the
+alternative-n *sweep*, `helpers.R::grim_n_profile(means, n_range, digits)`. GRIM
 only applies to **integer totals** (sum of integer items). Per-item means use
 `items = #items`. Zung SDS/SAS *index* scores (raw × 1.25) are NOT integer-grained
 → exclude.

@@ -47,9 +47,9 @@ library(recalc)      # baseline p recalculation (install from ~/git/recalc)
 library(knitr)
 library(kableExtra)
 
-source("helpers.R")  # skill glue: grim_consistent, grim_n_profile, implied_sum,
-                     # recalc_baseline_t/_chisq, prepost_r_plausibility, p_decimals
-                     # (copy alongside this file). Stats engine = recalc::* .
+source("helpers.R")  # skill glue: grim_n_profile, implied_sum, recalc_baseline_t/_chisq,
+                     # prepost_r_plausibility, p_decimals (copy alongside this file).
+                     # Stats engines called directly: scrutiny::grim*, recalc::* .
 ```
 
 # Step 0 — Load-bearing claim
@@ -141,8 +141,9 @@ arithmetic; distinguish rounding artifacts from true contradictions. Also: bound
 correlation matrix) and coherence (part-whole; bootstrap-CI-vs-p). -->
 
 ```{r grim-block}
+# GRIM is scrutiny's; state the reporting precision via digits_x.
 # grim_res <- dat |> filter(integer) |>
-#   rowwise() |> mutate(GRIM = grim_consistent(mean, n)) |> ungroup()
+#   mutate(GRIM = scrutiny::grim(mean, n, digits_x = 2)) |>     # vectorised
 # grim_res |> group_by(condition, time) |>
 #   summarise(pass = sum(GRIM), total = n(), .groups = "drop") |>
 #   kable() |> kable_classic(full_width = FALSE)
@@ -150,7 +151,7 @@ correlation matrix) and coherence (part-whole; bootstrap-CI-vs-p). -->
 
 ```{r grim-altn}
 # failing <- dat |> filter(integer, condition == "<arm>", time == "<time>")
-# prof <- grim_n_profile(failing$mean, n_range = 15:40)
+# prof <- grim_n_profile(failing$mean, n_range = 15:40, digits = 2)  # skill sweep
 # ggplot(prof, aes(n, consistent)) + geom_col() + theme_minimal()
 # map_dfr(failing$mean, implied_sum, n = <peak_n>)   # residual ~0 confirms
 ```

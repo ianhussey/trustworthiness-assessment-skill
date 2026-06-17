@@ -38,11 +38,21 @@ if (requireNamespace("recalc", quietly = TRUE)) {
   cat("  SKIP recalc not installed (>= 0.6 required for the analysis chunks)\n")
 }
 
-cat("== GRIM helpers (skill glue, unchanged) ==\n")
-ok(grim_consistent(15.95, 26) == FALSE, "grim_consistent(15.95, 26) == FALSE")
-ok(grim_consistent(15.19, 26) == TRUE,  "grim_consistent(15.19, 26) == TRUE")
-ok(grim_n_profile(c(15.95, 8.76, 24.33), 18:26)$consistent[grim_n_profile(c(15.95,8.76,24.33),18:26)$n==21] >= 0,
-   "grim_n_profile runs and returns counts")
+cat("== GRIM: scrutiny direct + grim_n_profile sweep (skill glue) ==\n")
+if (requireNamespace("scrutiny", quietly = TRUE)) {
+  ok(scrutiny::grim(15.95, 26, digits_x = 2) == FALSE, "scrutiny::grim(15.95, 26) == FALSE")
+  ok(scrutiny::grim(15.19, 26, digits_x = 2) == TRUE,  "scrutiny::grim(15.19, 26) == TRUE")
+  # grim_n_profile recovers the Pu sham-post n=21 peak (1/10 at reported n=26)
+  sp <- c(15.95, 14.67, 8.76, 24.33, 15.19, 30.90, 10.48, 28.29, 7.67, 4.90)
+  pr <- grim_n_profile(sp, 18:26, digits = 2)
+  ok(pr$n[which.max(pr$consistent)] == 21 && max(pr$consistent) == 10,
+     "grim_n_profile peak at n=21 (10/10); n=26 gives 1/10")
+  ok(pr$consistent[pr$n == 26] == 1, "grim_n_profile: 1/10 consistent at reported n=26")
+} else {
+  cat("  SKIP scrutiny not installed\n")
+}
+ok(tryCatch({ grim_n_profile(c(15.95), 20:26); FALSE }, error = function(e) TRUE),
+   "grim_n_profile requires explicit digits (no silent precision default)")
 
 cat(sprintf("\n%s  (%d failures)\n", if (.fails == 0) "ALL TESTS PASSED" else "TESTS FAILED", .fails))
 if (.fails > 0) quit(status = 1)

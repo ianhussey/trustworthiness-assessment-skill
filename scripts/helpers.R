@@ -9,27 +9,27 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# GRIM — is a reported mean achievable as (integer sum) / n for an integer total?
-# Thin adapter over scrutiny::grim() (the canonical GRIM implementation): maps the
-# skill's `digits` convention to scrutiny's `digits_x` and stays vectorised over
-# `mean_reported` (recycling `n`), so grim_n_profile() and the table-wise calls in
-# the template keep working. `items` > 1 only if the reported value is a per-ITEM
-# mean (total / items); for a raw total score leave items = 1.
-# ---------------------------------------------------------------------------
-grim_consistent <- function(mean_reported, n, digits = 2, items = 1) {
-  scrutiny::grim(x = mean_reported, n = n, digits_x = digits, items = items)
-}
-
-# THE forensic move when GRIM fails at the reported n: which n WOULD make a whole
+# GRIM itself is scrutiny's. Call it directly — and state the precision, which
+# scrutiny (rightly) requires:
+#   scrutiny::grim(x = mean, n = n, digits_x = 2)          # vectorised over x
+#   scrutiny::grim_map(df, digits_x = 2)                   # data-frame form
+# The skill adds only the forensic *sweep* below, not a GRIM re-export (a wrapper
+# with a default `digits` would silently assume precision — the exact footgun
+# scrutiny's mandatory digits_x guards against).
+#
+# grim_n_profile: when GRIM fails at the reported n, which n WOULD make a whole
 # block of reported means mutually consistent? A sharp single peak at a DIFFERENT
 # n than reported points to an undisclosed sample size (dropout / per-protocol
-# subset / altered values). A flat profile points to non-integer data or genuinely
-# anomalous values. Returns a tibble of (n, # consistent, total).
-grim_n_profile <- function(means, n_range, digits = 2, items = 1) {
+# subset / altered values); a flat profile points to non-integer data or genuinely
+# anomalous values. `digits` must match the reporting precision of `means`.
+# ---------------------------------------------------------------------------
+grim_n_profile <- function(means, n_range, digits, items = 1) {
+  if (missing(digits)) stop("Specify `digits` = the decimal places `means` were reported to.")
   tibble::tibble(n = n_range) |>
     dplyr::rowwise() |>
-    dplyr::mutate(consistent = sum(grim_consistent(means, n, digits, items)),
-                  total = length(means)) |>
+    dplyr::mutate(
+      consistent = sum(scrutiny::grim(x = means, n = n, digits_x = digits, items = items)),
+      total = length(means)) |>
     dplyr::ungroup()
 }
 

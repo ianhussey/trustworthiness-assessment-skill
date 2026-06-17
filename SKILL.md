@@ -59,11 +59,12 @@ the R for each lives in `scripts/helpers.R` (API notes in
    tables? does df imply one N?); and, for a trial baseline table, **baseline
    p-value recalculation** (`recalc_baseline_t`, `recalc_baseline_chisq`). If the
    headline numbers cohere, say so explicitly.
-2. **Possibility** — GRIM/GRIMMER on integer-scored means, run *separately by
-   group × timepoint* (`grim_consistent`). When a block fails at its reported n,
-   search alternative n (`grim_n_profile`, `implied_sum`). Also bounds (Popoviciu,
-   Bhatia–Davis, |r|≤1, estimate-in-CI, PSD correlation matrix) and coherence.
-   Tag genuine failures `[IMPOSSIBLE]` with arithmetic.
+2. **Possibility** — GRIM/GRIMMER on integer-scored means
+   (`scrutiny::grim(x, n, digits_x = …)` / `grimmer_map`), run *separately by
+   group × timepoint*. When a block fails at its reported n, search alternative n
+   (`grim_n_profile`, `implied_sum`). Also bounds (Popoviciu, Bhatia–Davis,
+   |r|≤1, estimate-in-CI, PSD correlation matrix) and coherence. Tag genuine
+   failures `[IMPOSSIBLE]` with arithmetic.
 3. **Plausibility** — derive the effect sizes the paper omits (`metafor::escalc`)
    and test them against the design ceiling and the field. For pre/post data,
    check **change-score coherence** with `recalc`: `recalc::recalc_prepost_r()`
