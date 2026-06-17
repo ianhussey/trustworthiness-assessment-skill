@@ -1,0 +1,457 @@
+---
+title: "Trustworthiness assessment — TEMPLATE"
+subtitle: "Reusable Quarto scaffold + working notes for forensic trustworthiness assessments"
+author: "Ian Hussey"
+date: today
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    toc: true
+    toc-float: true
+    theme: flatly
+    highlight-style: haddock
+    embed-resources: true
+editor_options:
+  chunk_output_type: console
+---
+
+<!--
+============================================================================
+HOW TO USE THIS TEMPLATE
+============================================================================
+This is a SCAFFOLD, not a finished analysis. To assess a specific paper:
+
+  1. Copy this file to `<firstauthor>_<year>_trustworthiness_assessment.qmd`.
+  2. Read the paper AND every public record (registration, prior papers by the
+     team, retraction databases) BEFORE touching the arithmetic. Extract the
+     numbers by hand into the `data_*` objects in the "Extract data" chunk.
+  3. Work through the steps below IN ORDER. Each maps onto a step of the
+     forensic prompt in `trustworthiness-assessment-prompt.md`. Delete steps
+     that don't apply to the data type, but say so explicitly.
+  4. The deliverable is the *written* assessment (classification + bottom line
+     + findings ordered by severity), NOT the tables. The R here EXISTS TO
+     SUPPORT CLAIMS — every quantitative assertion in the writeup should be
+     reproducible from a chunk here.
+
+GUIDING STANCE (from the prompt — re-read before judging anything):
+  - Burden of proof is on the original authors. You only have to EXPLAIN an
+    issue clearly; you do not have to reconcile it.
+  - Do NOT adjudicate intent. Describe what the data imply; never accuse.
+  - Think stupider: check the boring arithmetic (do the n's add up?) before
+    the clever stuff. Most fatal errors are simple.
+  - No false positives. "I found nothing impossible" is a valid, valuable
+    result. Distinguish a rounding artifact from a true contradiction, and
+    calibrate confidence: IMPOSSIBLE / IMPLAUSIBLE / MISALIGNMENT / cannot-check.
+  - Tag every finding [IMPOSSIBLE] / [IMPLAUSIBLE] / [MISALIGNMENT] / [GOVERNANCE]
+    and keep the categories distinct. The commonest failure is dressing an
+    opinion (plausibility) up as arithmetic (impossibility).
+  - Some tools are underpowered for a single paper — do NOT use terminal-digit,
+    Benford, p-curve or z-curve to "detect" fraud from a handful of numbers.
+============================================================================
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+options(scipen = 999)
+```
+
+```{r libraries}
+library(tidyverse)
+library(metafor)     # escalc(): SMD / effect sizes you derive yourself
+library(janitor)
+library(statcheck)   # recompute p from t/F/r/chi2 in reported text
+library(scrutiny)    # GRIM / GRIMMER (see API note below)
+library(recalc)      # recalc baseline p-values from reported m/sd/n or counts
+                     # (Ian's package; source at ~/git/recalc, installed locally)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+library(scales)
+```
+
+```{r helpers}
+# ---------------------------------------------------------------------------
+# Reusable helpers. These are the workhorses; lean on them in the steps below.
+# ---------------------------------------------------------------------------
+
+# GRIM in base R (robust to scrutiny API churn). Is a reported mean rounded to
+# `digits` achievable as (integer sum) / n for an integer-scored total?
+# `items` > 1 only if the reported value is a per-ITEM mean (total/items);
+# for a raw total score leave items = 1.
+grim_consistent <- function(mean_reported, n, digits = 2, items = 1) {
+  tol  <- 0.5 * 10^(-digits)
+  gran <- 1 / (n * items)                      # granularity of an integer-sum mean
+  lo   <- (mean_reported - tol)
+  hi   <- (mean_reported + tol)
+  # is there a multiple of `gran` inside [lo, hi]?
+  k_lo <- ceiling(lo / gran - 1e-9)
+  k_hi <- floor(  hi / gran + 1e-9)
+  k_lo <= k_hi
+}
+
+# scrutiny GRIM, using the v0.6.x API: x is NUMERIC, digits via `digits_x` arg.
+# (In some installs string-x is defunct; pass numbers + digits_x.)
+grim_scrutiny <- function(df, digits_x = 2, items = 1) {
+  scrutiny::grim_map(df |> select(x, n), digits_x = digits_x, items = items)
+}
+
+# THE forensic move when GRIM fails at the reported n: which n WOULD make a
+# whole block of reported means mutually consistent? A sharp single peak that
+# differs from the reported group size points to an undisclosed n (dropout,
+# per-protocol subset, or altered values). A flat profile points to non-integer
+# data or genuinely fabricated values.
+grim_n_profile <- function(means, n_range, digits = 2, items = 1) {
+  tibble(n = n_range) |>
+    rowwise() |>
+    mutate(consistent = sum(grim_consistent(means, n, digits, items)),
+           total = length(means)) |>
+    ungroup()
+}
+
+# Implied integer sum at a candidate n (residual ~0 => that n is plausible).
+implied_sum <- function(mean_reported, n) {
+  s <- mean_reported * n
+  tibble(mean = mean_reported, n = n, raw = s,
+         nearest_int = round(s), residual = round(s - round(s), 3))
+}
+
+# partial eta-squared <-> F reconciliation for a 1-df effect.
+# For df_effect = 1: eta_p^2 = F / (F + df_error).  df_error = N - groups.
+eta_from_F <- function(F, df_error, df_effect = 1) {
+  (F * df_effect) / (F * df_effect + df_error)
+}
+
+# Implied pre-post correlation from a 2x2 (group x time) RM-ANOVA interaction.
+# For two timepoints the Group x Time interaction F is EXACTLY t^2 from an
+# independent test on the CHANGE scores, so F pins down the pooled SD of change;
+# with the reported baseline/post SDs it back-solves the implied within-person
+# pre-post r. RED FLAG: an implied change SD SMALLER than the cross-sectional
+# SDs (=> high implied r, near-uniform response) is implausible for noisy
+# clinical scales -> [IMPLAUSIBLE]. Caveat: assumes a common r across groups;
+# cannot be confirmed without the (usually unreported) change-score SDs.
+implied_prepost_r <- function(F_int, m1b, s1b, m1p, s1p, n1,
+                                      m2b, s2b, m2p, s2p, n2) {
+  diff_change <- (m1p - m1b) - (m2p - m2b)
+  s_pooled_change <- abs(diff_change) / (sqrt(F_int) * sqrt(1/n1 + 1/n2))
+  r <- tryCatch(uniroot(function(r) {
+    v1 <- s1b^2 + s1p^2 - 2*r*s1b*s1p
+    v2 <- s2b^2 + s2p^2 - 2*r*s2b*s2p
+    ((n1-1)*v1 + (n2-1)*v2)/(n1+n2-2) - s_pooled_change^2
+  }, c(-0.99, 0.999))$root, error = function(e) NA_real_)
+  tibble(pooled_change_sd = round(s_pooled_change, 3),
+         implied_r = round(r, 3),
+         change_sd_g1 = round(sqrt(s1b^2 + s1p^2 - 2*r*s1b*s1p), 2),
+         change_sd_g2 = round(sqrt(s2b^2 + s2p^2 - 2*r*s2b*s2p), 2),
+         baseline_sd_g1 = s1b, post_sd_g1 = s1p,
+         baseline_sd_g2 = s2b, post_sd_g2 = s2p)
+}
+
+# round-half-up to fixed decimals (SPSS-style), for display parity with papers
+round_half_up_min_decimals <- function(x, digits = 2) {
+  sprintf(paste0("%.", digits, "f"), scrutiny::reround(x, digits = digits)[[1]])
+}
+
+# number of decimal places in a reported p (so recalc rounds p correctly)
+p_decimals <- function(p) {
+  s <- format(p, scientific = FALSE, trim = TRUE)
+  if (!grepl(".", s, fixed = TRUE)) return(0L)
+  nchar(strsplit(s, ".", fixed = TRUE)[[1]][2])
+}
+
+# Baseline p-value recalculation (recalc): does each reported baseline p cohere
+# with the reported group m/sd/n? recalc returns a MULTIVERSE (Student/Welch x
+# rounding x direction); we summarise as [min_p, max_p] and whether the reported
+# p falls inside that hull (p_inbounds_hull). A reported p OUTSIDE the hull is the
+# flag — it cannot arise from the reported summary stats under any standard test.
+# Pass one row per continuous baseline variable; n1/n2 are the GROUP sizes.
+recalc_baseline_t <- function(df, n1, n2, m_digits = 2, sd_digits = 3) {
+  purrr::pmap_dfr(df, function(variable, m1, sd1, m2, sd2, p) {
+    r  <- recalc::recalc_independent_t_p(
+      m1 = m1, m2 = m2, sd1 = sd1, sd2 = sd2, n1 = n1, n2 = n2,
+      m_digits = m_digits, sd_digits = sd_digits,
+      p = p, p_digits = p_decimals(p))
+    rp <- dplyr::distinct(r$reproduced)
+    tibble(variable, reported_p = p,
+           recomputed_min = round(rp$min_p, 3),
+           recomputed_max = round(rp$max_p, 3),
+           reproduced = rp$p_inbounds_hull)
+  })
+}
+```
+
+# Step 0 — Load-bearing claim
+
+<!--
+State, in ONE sentence, the single result the paper's contribution rests on.
+Then note: is it the PRE-REGISTERED PRIMARY outcome, or a secondary / post-hoc
+result promoted to the headline? Everything downstream is prioritised by how
+directly it bears on this claim.
+-->
+
+> *Load-bearing claim goes here.*
+
+# Step 0.5 — Public record (do before any arithmetic)
+
+<!--
+Cheap, decisive, verifiable by anyone. Check and record:
+  - Retraction / expression of concern / correction on THIS paper.
+  - The research TEAM's track record (prior retractions/concerns raise the prior).
+  - The TRIAL REGISTRATION: pull it from clinicaltrials.gov (or other registry)
+    and compare field-by-field to the paper. Registries lie less than papers.
+Build the comparison as a table so a reader can see mismatches at a glance.
+If web access is unavailable, say so and mark this "not checked".
+Flag anything here [GOVERNANCE].
+-->
+
+```{r public-record}
+# Example shape — fill from the registry record + paper text:
+# registration_check <- tribble(
+#   ~field,            ~registry,                 ~paper,
+#   "Allocation",      "NON_RANDOMIZED",          "randomized",
+#   "Masking",         "NONE",                    "double-blind",
+#   "Enrollment",      "400",                     "78",
+#   "Design",          "patients vs controls",    "active vs sham",
+#   "Primary outcome", "EEG/MRI/fNIRS + HAMD",    "HAMD-17 post",
+# )
+# registration_check |> kable() |> kable_classic(full_width = FALSE)
+```
+
+# Extract data
+
+<!--
+Hand-key every reported summary statistic you will test. Keep groups, timepoints
+and n explicit. Note for EACH measure whether the underlying score is an INTEGER
+(sum of integer items) — GRIM/GRIMMER only apply to integer-grained data. Common
+gotchas: Zung SDS/SAS are often reported as INDEX scores (raw x 1.25), which are
+NOT integer-grained → exclude from strict GRIM or test under the right grain.
+-->
+
+```{r extract-data}
+# data_summary <- tribble(
+#   ~variable, ~scale_is_integer, ~condition, ~time, ~n, ~mean, ~sd,
+#   ...
+# )
+
+# For statcheck: a character column of printed results, e.g.
+# data_statcheck <- tibble(
+#   test = c(...),
+#   printed_result = c("F(1, 76) = 117.055, p < .001", "r = -.455, p = .001", ...)
+# )
+```
+
+# Step 1 — Numerical sanity check
+
+<!--
+Recompute the central statistics from reported inputs; SHOW the arithmetic.
+For TRIALS this includes PARTICIPANT-FLOW FORENSICS (do the n's cohere?):
+  - analysed n vs eligibility; allocated n vs stated ratio/method;
+  - every count in CONSORT diagram, text and tables sums to the same total;
+  - df of each test implies the same N (df_error = N - #groups).
+Also: F <-> partial eta^2 consistency; r -> t -> p; reported p vs recomputed p.
+If the headline numbers cohere, SAY SO — that is a real finding.
+-->
+
+```{r statcheck}
+# bind_cols(data_statcheck |> select(test),
+#           statcheck(data_statcheck$printed_result, messages = FALSE)) |>
+#   select(test, raw, computed_p = computed, error, decision_error) |>
+#   kable() |> kable_classic(full_width = FALSE)
+```
+
+```{r eta-F-reconcile}
+# F <- c(...); eta_reported <- c(...); df_error <- 76
+# tibble(F, eta_reported, eta_calc = round(eta_from_F(F, df_error), 3)) |>
+#   mutate(diff = eta_calc - eta_reported) |>
+#   kable() |> kable_classic(full_width = FALSE)
+```
+
+## Baseline p-value recalculation (`recalc`)
+
+<!--
+For a TRIAL, the baseline table is a gift: every row reports m/sd/n (or counts)
+AND a p-value, so each p can be INDEPENDENTLY recomputed from the summary stats.
+`recalc` does this across a multiverse (Student/Welch, rounding bounds, direction;
+chi-sq/Fisher for categorical) and returns the [min_p, max_p] hull plus whether
+the reported p falls inside it. Two distinct uses:
+
+  (1) NUMERICAL SANITY (here): a reported baseline p OUTSIDE its recomputed hull
+      cannot come from the reported m/sd/n under any standard test → [IMPOSSIBLE]
+      (a transcription/computation error at minimum). If all reproduce, SAY SO.
+
+  (2) CARLISLE-STYLE BASELINE CHECK (Step 3): once you trust the p's, their
+      DISTRIBUTION across many baseline variables should be ~uniform under real
+      randomisation. Too many large p's (all ~1, "too balanced") or a clustered
+      pattern is a distributional flag — but this is plausibility, not proof, and
+      is weak with few variables. Do NOT over-read a handful of p's.
+
+Validation of recalc itself lives in ~/git/recalc/validation (simulations vs
+statcheck and the reappraised webapp).
+-->
+
+```{r recalc-baseline}
+# Continuous baseline rows: one row per variable, columns variable/m1/sd1/m2/sd2/p.
+# (group 1 / group 2 must match the n1 / n2 you pass.)
+# baseline_cont <- tribble(
+#   ~variable, ~m1, ~sd1, ~m2, ~sd2, ~p,
+#   "HAMD", 24.71, 4.137, 24.81, 3.774, .921,
+#   ...
+# )
+# recalc_baseline_t(baseline_cont, n1 = 52, n2 = 26) |>
+#   kable(caption = "Reported vs recomputed baseline p (multiverse hull).") |>
+#   kable_classic(full_width = FALSE)
+
+# Categorical baseline rows (e.g. sex): counts as a 2x2 (or RxC) matrix.
+# recalc::recalc_chisq_p(counts = matrix(c(a, b, c, d), nrow = 2, byrow = TRUE),
+#                        p = .082, p_digits = 3)$reproduced |> distinct()
+```
+
+# Step 2 — Possibility (can these numbers exist at all?) — GRIM / GRIMMER
+
+<!--
+Apply where data are integer-grained. Label genuine failures [IMPOSSIBLE] and
+SHOW the arithmetic. Distinguish a 1-in-last-digit rounding artifact from a
+true contradiction.
+
+KEY PATTERN to look for (this template was built around a real case): run GRIM
+SEPARATELY by group x timepoint. If one block (e.g. one arm, one timepoint) is
+~100% consistent at its reported n while a sibling block is ~100% INCONSISTENT
+at the SAME reported n, that asymmetry is the signal. Then run grim_n_profile()
+on the failing block: a sharp peak at a DIFFERENT n reveals the true sample size
+behind those means (undisclosed dropout / subset / altered values). Cross-check
+that n against the df of the reported tests.
+
+Other possibility checks (apply as the data permit):
+  - Bounds: mean inside scale range; SD <= range/2 (Popoviciu); |r| <= 1;
+    point estimate inside (and near middle of) its own CI; correlation matrix PSD.
+  - Coherence: a bootstrap CI for an indirect effect crossing zero cannot
+    coexist with a small reported p; a part-whole correlation cannot be smaller
+    than sibling-part correlations.
+-->
+
+```{r grim-by-block}
+# grim_res <- data_summary |>
+#   filter(scale_is_integer) |>
+#   rowwise() |>
+#   mutate(GRIM = grim_consistent(mean, n)) |>
+#   ungroup()
+# grim_res |>
+#   count(condition, time, GRIM) |>
+#   pivot_wider(names_from = GRIM, values_from = n, values_fill = 0) |>
+#   kable(caption = "GRIM pass/fail by group x time") |> kable_classic(full_width = FALSE)
+```
+
+```{r grim-alt-n}
+# If a block fails: which n makes it cohere?
+# failing <- data_summary |> filter(condition == "sham", time == "post", scale_is_integer)
+# grim_n_profile(failing$mean, n_range = 15:40) |>
+#   ggplot(aes(n, consistent)) + geom_col() +
+#   labs(title = "GRIM-consistent means vs assumed n (failing block)",
+#        y = "# consistent", x = "assumed n") + theme_minimal()
+# # and show the implied integer sums at the peak n:
+# map_dfr(failing$mean, implied_sum, n = <peak_n>) |> kable() |> kable_classic(full_width = FALSE)
+```
+
+```{r grimmer}
+# GRIMMER (mean + SD jointly). More assumption-laden than GRIM (rounding model,
+# items). Report with caution; do not over-read a single GRIMMER failure.
+# scrutiny::grimmer_map(data_summary |> filter(scale_is_integer) |>
+#                         transmute(x = mean, sd, n),
+#                       digits_x = 2, digits_sd = 3) |>
+#   select(x, sd, n, consistency) |> kable() |> kable_classic(full_width = FALSE)
+```
+
+# Step 3 — Plausibility (believable given design & field?)
+
+<!--
+Softer than Step 2 → label [IMPLAUSIBLE] and say WHY. DERIVE the effect sizes
+the paper omits (escalc) so you can test them against the literature ceiling.
+  - Effect-size sanity: is g/d/eta^2 this large achievable for THIS design and
+    comparator? Compare to maximum credible magnitudes (e.g. for iTBS-vs-sham in
+    MDD, against THREE-D / network meta-analyses). The single commonest error is
+    the SE-vs-SD swap — check it.
+  - Distributions/design: Carlisle-style baseline check — once the baseline p's
+    are recomputed and trusted (Step 1 "Baseline p-value recalculation"), is
+    their DISTRIBUTION across variables consistent with real randomisation, or
+    suspiciously uniform / too-balanced? (Weak with few variables — don't
+    over-read.) Also: is the unit of randomisation plausible; attrition /
+    recruitment rates; the pattern of p-values across tests vs implied power.
+  - Untestable-as-designed: trajectory/forgetting-curve claims from a single
+    post timepoint (intermediate values are interpolated, not measured).
+-->
+
+```{r effect-sizes}
+# Derive between-group post SMD yourself (Hedges g) and its CI:
+# escalc(measure = "SMD",
+#        m1i = ..., sd1i = ..., n1i = ...,   # group 1 (e.g. sham)
+#        m2i = ..., sd2i = ..., n2i = ...) |> # group 2 (e.g. active)
+#   summary()
+```
+
+<!--
+For a 2x2 (group x time) RM-ANOVA, ALSO interrogate the interaction F itself: it
+implies a change-score SD and a pre-post correlation. A reported F so large that
+the implied change SD falls BELOW the cross-sectional SDs (=> r near 0.9, a
+near-uniform response) is an [IMPLAUSIBLE] flag, and is the longitudinal twin of
+the "between-group effect is too big" point. The paper rarely reports change-score
+SDs, so this is often the only window onto within-person variability.
+-->
+
+```{r implied-r}
+# implied_prepost_r(F_int = <interaction F>,
+#                   m1b, s1b, m1p, s1p, n1,    # group 1 baseline/post m & sd, n
+#                   m2b, s2b, m2p, s2p, n2) |> # group 2
+#   kable(caption = "Implied change-score SD & pre-post r from the interaction F.") |>
+#   kable_classic(full_width = FALSE)
+```
+
+# Step 4 — Misalignment (do the methods support the claim?)
+
+<!--
+A real trustworthiness category, not an opinion. Tag [MISALIGNMENT]. Three kinds:
+  - Measure–construct: does the instrument capture the named construct?
+    reliability high enough to support the association claimed? self-report
+    standing in for behaviour? jingle/jangle?
+  - Test–inference: can the analysis license the inference? Watch: causal
+    language from cross-sectional/observational data; efficacy from anything
+    other than a controlled post comparison; change-change correlations within
+    one arm read as mechanism (math coupling + regression to mean); ANCOVA on
+    non-equivalent groups; "protected F"; cluster-then-test; Table-2 fallacy.
+  - Claim–evidence: does the abstract/title match the tables? does a general
+    claim rest on a narrow effect? does the explanandum switch between intro and
+    discussion? is the estimand ever defined?
+-->
+
+> *Misalignment findings (prose), each tagged and argued.*
+
+# Step 5 — Conduct, governance, transparency
+
+<!--
+[GOVERNANCE] regardless of the statistics:
+  - Ethics-approval timing vs data collection (retrospective approval is not review).
+  - Registration presence/timing AND consistency with reported methods (Step 0.5).
+  - Feasibility with reported resources / recruitment window.
+  - Data-availability statement; duplicated text/tables; figure manipulation.
+  - SAME study across multiple papers (companion/conference/secondary): do n,
+    design, outcomes stay consistent, or shift unexplained? List the team's
+    related papers and what would need cross-checking.
+-->
+
+> *Governance findings (prose), each tagged.*
+
+# Output — assemble the verdict
+
+<!--
+Write the final assessment in this order (this is the actual deliverable):
+  1. OVERALL CLASSIFICATION — exactly one, justified in a sentence:
+       trustworthy as reported / concerns pending clarification (specify what
+       would resolve them) / not trustworthy as reported.
+  2. BOTTOM LINE — 1-2 sentences: can the headline result be trusted, and why.
+  3. NUMERICAL SANITY CHECK — what you recomputed and whether it held.
+  4. FINDINGS, ORDERED BY SEVERITY — each tagged, with arithmetic/reasoning shown.
+  5. WHAT I COULD NOT CHECK — things needing data, supplements, or expertise.
+
+Reminder for the reader at the foot: this is a starting point, not a verdict to
+act on unchecked. Independently verify arithmetic against the article before
+contacting anyone; describe issues, do not accuse.
+-->
