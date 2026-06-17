@@ -164,19 +164,27 @@ correlation matrix) and coherence (part-whole; bootstrap-CI-vs-p). -->
 # Step 3 — Plausibility
 
 <!-- Derive omitted effect sizes; test against the design ceiling and the field.
-Watch the SE-vs-SD swap. For 2x2 RM-ANOVA also interrogate the interaction F via
-the implied change-SD / pre-post r. Carlisle-style baseline distribution (weak
-with few vars). Tag [IMPLAUSIBLE]. -->
+Watch the SE-vs-SD swap. For pre/post data, check change-score coherence (implied
+pre-post r) below. Carlisle-style baseline distribution (weak with few vars).
+Tag [IMPLAUSIBLE] / [IMPOSSIBLE]. -->
 
 ```{r effect-sizes}
 # escalc(measure = "SMD", m1i=, sd1i=, n1i=, m2i=, sd2i=, n2i=) |> summary()
 ```
 
 ```{r implied-r}
-# implied_prepost_r(F_int = <interaction F>,
-#   m1b, s1b, m1p, s1p, n1, m2b, s2b, m2p, s2p, n2) |>
-#   kable(caption = "Implied change-score SD & pre-post r from the interaction F.") |>
+# Change-score coherence -> implied within-person pre-post r + feasibility flag.
+# (A) when a change SD is reported (or an independent t was run on change scores):
+# prepost_r_from_change_sd(sd_pre = , sd_post = , sd_change = ) |>
+#   kable(caption = "Implied pre-post r from reported SDs.") |>
 #   kable_classic(full_width = FALSE)
+# (B) when only a 2x2 (group x time) RM-ANOVA interaction F is given:
+# prepost_r_from_F(F_int = <interaction F>,
+#   m1b, s1b, m1p, s1p, n1, m2b, s2b, m2p, s2p, n2) |>
+#   kable(caption = "Implied pre-post r from the interaction F.") |>
+#   kable_classic(full_width = FALSE)
+# flag: impossible_high_r / impossible_low_r (change SD outside the feasible
+#   band) = [IMPOSSIBLE]; implausible_negative_r / implausibly_high_r = [IMPLAUSIBLE].
 ```
 
 # Step 4 — Misalignment

@@ -15,8 +15,10 @@ trustworthiness-assessment-skill/
 │   └── r-cookbook.md              # scrutiny / recalc / statcheck / metafor API notes + snippets
 ├── assets/
 │   └── assessment_template.qmd    # Quarto scaffold to copy per paper (sources helpers.R)
-└── scripts/
-    └── helpers.R                  # analysis functions (single source of truth)
+├── scripts/
+│   └── helpers.R                  # analysis functions (single source of truth)
+└── tests/
+    └── test-helpers.R             # base-R tests for the helpers — `Rscript tests/test-helpers.R`
 ```
 
 `SKILL.md` is intentionally lean: it drives the workflow and points to the references, which load on demand. The method itself lives in `references/forensic-method.md`.

@@ -64,10 +64,14 @@ the R for each lives in `scripts/helpers.R` (API notes in
    Bhatia–Davis, |r|≤1, estimate-in-CI, PSD correlation matrix) and coherence.
    Tag genuine failures `[IMPOSSIBLE]` with arithmetic.
 3. **Plausibility** — derive the effect sizes the paper omits (`metafor::escalc`)
-   and test them against the design ceiling and the field; for 2×2 RM-ANOVA also
-   interrogate the interaction F via the implied change-SD / pre–post r
-   (`implied_prepost_r`). Watch the SE-vs-SD swap. Carlisle-style baseline
-   distribution (weak with few variables). Tag `[IMPLAUSIBLE]`.
+   and test them against the design ceiling and the field. For pre/post data,
+   check **change-score coherence**: `prepost_r_from_change_sd()` when a change
+   SD is reported (or an independent t on change scores), or `prepost_r_from_F()`
+   from a 2×2 RM-ANOVA interaction F — both return the implied pre–post r and a
+   feasibility `flag` (impossible if the change SD is outside
+   `[|SD_pre−SD_post|, SD_pre+SD_post]`; implausible if r < 0 or r > .95). Watch
+   the SE-vs-SD swap. Carlisle-style baseline distribution (weak with few
+   variables). Tag `[IMPLAUSIBLE]` / `[IMPOSSIBLE]`.
 4. **Misalignment** — measure↔construct, test↔inference, claim↔evidence. Tag
    `[MISALIGNMENT]`.
 5. **Conduct/governance/transparency** — ethics/registration timing, feasibility,

@@ -113,18 +113,51 @@ column of internally consistent F/η² also fixes `df_error = N − #groups`, i.
 N every test assumes — cross-check against the stated completer count and the
 GRIM/alternative-n result.
 
-## Implied pre–post r from a 2×2 RM-ANOVA interaction
+## Implied pre–post correlation (change-score coherence)
 
-For two timepoints the Group×Time interaction F equals `t²` on the change scores,
-so F pins down the change-score SD and (with the cross-sectional SDs) the implied
-within-person pre–post r:
+A pre/post result is driven by the **change-score variance**, tied to the pre and
+post SDs by the identity
 
-```r
-implied_prepost_r(F_int = 117.055,
-  m1b, s1b, m1p, s1p, n1,    # group 1 baseline/post mean & sd, n
-  m2b, s2b, m2p, s2p, n2)    # group 2
+```
+Var(change) = SD_pre² + SD_post² − 2·r·SD_pre·SD_post
 ```
 
-`[IMPLAUSIBLE]` if the implied change SD falls **below** the cross-sectional SDs
-(=> r near 0.9, a near-uniform response). Caveat in-text: assumes a common r
-across groups; cannot be confirmed without the (usually unreported) change SDs.
+so a reported (or F-implied) change SD pins down the within-person pre–post
+correlation `r`. A real change SD must lie in `[ |SD_pre − SD_post| , SD_pre+SD_post ]`
+(the `r = +1` and `r = −1` limits); outside that band the three SDs cannot
+coexist. Two entry points, both returning `implied_r` + a `flag`:
+
+```r
+# (1) You have SD_pre, SD_post AND a change SD (a "change" row, or an independent
+#     t computed on change scores). Vectorised.
+prepost_r_from_change_sd(sd_pre, sd_post, sd_change)   # -> implied_r, change_sd_min/max, flag
+
+# (2) You have a 2x2 (group x time) RM-ANOVA interaction F instead of a change SD.
+#     F = t² on the change scores pins the pooled change SD; r is back-solved
+#     (closed form, so it can return |r| > 1 to flag an F incompatible with the SDs).
+prepost_r_from_F(F_int = 117.055,
+  m1b, s1b, m1p, s1p, n1,     # group 1 baseline/post mean & sd, n
+  m2b, s2b, m2p, s2p, n2)     # group 2
+# implied_prepost_r() is a back-compatible alias for prepost_r_from_F().
+
+# reverse direction — the change SD a "normal" r would produce:
+expected_change_sd(sd_pre, sd_post, r = 0.5)
+```
+
+`flag` values and how to tag them:
+
+| flag | meaning | tag |
+|---|---|---|
+| `impossible_high_r` | change SD `< |SD_pre − SD_post|` ⇒ r > 1 | `[IMPOSSIBLE]` |
+| `impossible_low_r` | change SD `> SD_pre + SD_post` ⇒ r < −1 | `[IMPOSSIBLE]` |
+| `implausible_negative_r` | r < 0 — pre/post of one scale rarely correlate negatively; forced when the change SD exceeds **both** component SDs | `[IMPLAUSIBLE]` |
+| `implausibly_high_r` | r > 0.95 — near-deterministic, unusually homogeneous response | `[IMPLAUSIBLE]` |
+| `ok` / `undefined` | plausible / non-finite (e.g. a zero or missing SD) | — |
+
+Worked example (Gauhar 2016, TSC-40): the between-group test used change SD
+`13.01`. With the **table** component SDs `(6.77, 7.45)` that implies `r ≈ −0.673`
+(`implausible_negative_r` — the change SD exceeds both); with the **text** SDs
+`(14.58, 7.79)` it implies `r ≈ +0.458` (`ok`). The check pinpointed which of two
+contradictory SD sets was internally coherent. Caveats to state in-text: assumes
+the change SD is the SD of within-person differences; `prepost_r_from_F` assumes a
+single common r across groups. Validated in `tests/test-helpers.R`.
